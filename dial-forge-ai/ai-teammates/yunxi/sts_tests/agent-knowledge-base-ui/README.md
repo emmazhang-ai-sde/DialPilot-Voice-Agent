@@ -16,7 +16,7 @@ app/api/kb/upload/route.ts           ->  ai-pipeline/app/api/kb/upload/
 app/api/kb/documents/route.ts        ->  ai-pipeline/app/api/kb/documents/
 app/api/kb/documents/[id]/route.ts   ->  ai-pipeline/app/api/kb/documents/[id]/
 lib/*.ts                             ->  ai-pipeline/lib/
-supabase/migrations/0002_kb.sql      ->  ai-pipeline/supabase/migrations/
+supabase/migrations/0002_kb.sql      ->  db/migrations/
 ```
 
 ## Setup

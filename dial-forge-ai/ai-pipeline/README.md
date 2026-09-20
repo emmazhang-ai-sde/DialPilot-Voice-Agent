@@ -46,7 +46,7 @@ Secrets go in `ai-pipeline/.env.local` (never committed). Variables referenced b
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | TTS (shared with the SIP demo) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | Alternative LLM providers used in comparison/testing code |
 
-Note: this same `.env.local` is also read by the SIP demo scripts (`sip/scripts/step2_stt_bridge.py` and `sip/demo-ui/demo_ui_server.py`), so it is the single place for secrets in this repo.
+Note: this same `.env.local` is also read by the SIP live bridge, so it is the single place for secrets in this repo.
 
 ## Folder map
 

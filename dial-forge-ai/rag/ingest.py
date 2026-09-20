@@ -2,7 +2,7 @@
 """RAG Build, Step 2 -- the daily ingest job.
 
 Reads every company's knowledge-base corpus (the per-company FOLDERS under
-sip/knowledge-base/, NOT the legacy single-file KBs), chunks each document by
+knowledge-base/, NOT the legacy single-file KBs), chunks each document by
 markdown section, tags each chunk core/detail, embeds it with OpenAI
 text-embedding-3-small, and UPSERTs the result into `sip_kb_chunks` in the
 merged Supabase project.
@@ -14,7 +14,7 @@ The read side (call-time retrieval) is RAG Step 3.
 Design doc: ../design-docs-sip/... -> see
   design-docs-rag/rag-per-company-knowledge-base-design-doc.md (section 5)
 Step doc:   design-docs-rag/rag-build-step-by-step/step2-ingest-job.md
-Schema:     sip/rag/rag-schema.sql (RAG Step 1 -- must be applied first)
+Schema:     db/migrations/legacy_rag_schema.sql (RAG Step 1 -- must be applied first)
 
 CORE vs DETAIL (decision recorded in the step doc, "Decision 1"):
   The corpus folders hold only *detail* content. The playbook (`core`) stays
@@ -50,13 +50,13 @@ def _find_repo_root(start: Path) -> Path:
     """Walk up to the globifye-ai dir (the one holding both the KB corpus and
     ai-pipeline). Robust to this script being moved between rag/ and sip/rag/."""
     for d in [start, *start.parents]:
-        if (d / "sip" / "knowledge-base").is_dir() and (d / "ai-pipeline").is_dir():
+        if (d / "knowledge-base").is_dir() and (d / "ai-pipeline").is_dir():
             return d
     return start.parents[1]
 
 
 REPO = _find_repo_root(Path(__file__).resolve())
-KB_DIR = REPO / "sip" / "knowledge-base"
+KB_DIR = REPO / "knowledge-base"
 ENV_PATH = REPO / "ai-pipeline" / ".env.local"
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -103,9 +103,12 @@ ENV = load_env(ENV_PATH)
 
 
 def _key(*names: str) -> str:
-    """Resolve a credential: .env.local first (local dev), then the process
-    environment (CI, where repo secrets arrive as env vars). First hit wins."""
-    for source in (ENV, os.environ):
+    """Resolve a credential.
+
+    Process environment wins so one-off migration commands can point at a fresh
+    Supabase project without rewriting ai-pipeline/.env.local.
+    """
+    for source in (os.environ, ENV):
         for n in names:
             v = source.get(n, "").strip()
             if v:
@@ -317,13 +320,15 @@ def vec_to_pg(vec: list[float]) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Supabase -- proven pattern copied from demo_ui_server.py (auth subtlety: a
-# Bearer header only for legacy eyJ... JWT keys; sb_secret_... uses apikey alone)
+# Supabase -- send both apikey and bearer auth. Supabase accepts this for both
+# legacy JWT service-role keys and newer sb_secret_... keys.
 # --------------------------------------------------------------------------- #
 def _sb_headers(extra=None) -> dict:
-    h = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
-    if SUPABASE_KEY.startswith("eyJ"):
-        h["Authorization"] = f"Bearer {SUPABASE_KEY}"
+    h = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
     if extra:
         h.update(extra)
     return h

@@ -475,13 +475,7 @@
   <div class="h-8 w-px bg-white/10 mx-2"></div>
 
   <!-- Action Buttons -->
-  <div class="flex items-center gap-2">
-    <button id="testInboundBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high/50 border border-white/10 text-on-surface-variant hover:text-white transition-all text-xs font-bold" aria-label="Test inbound call">
-      <span class="material-symbols-outlined text-sm hidden sm:inline">ring_volume</span>
-      <span class="hidden sm:inline">Test Inbound</span>
-      <span class="sm:hidden">Test</span>
-    </button>
-    <button id="startCallHeaderBtn" type="button" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-fire-gradient text-on-primary font-bold text-xs hover:brightness-110 transition-all shadow-lg" aria-label="New call">
+  <div class="flex items-center gap-2"><button id="startCallHeaderBtn" type="button" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-fire-gradient text-on-primary font-bold text-xs hover:brightness-110 transition-all shadow-lg" aria-label="New call">
       <span class="material-symbols-outlined text-sm">add</span>
       <span class="hidden sm:inline">New Call</span>
       <span class="sm:hidden">New</span>
@@ -1144,7 +1138,6 @@ async function loadDashboardDataAndUpdateUI() {
     const acceptBtn = document.getElementById('acceptCallBtn');
     const declineBtn = document.getElementById('declineCallBtn');
     const voicemailBtn = document.getElementById('voicemailCallBtn');
-    const testInboundBtn = document.getElementById('testInboundBtn');
 
     const activeBar = document.getElementById('activeCallBar');
     const activeName = document.getElementById('activeCallName');
@@ -1432,7 +1425,6 @@ async function loadDashboardDataAndUpdateUI() {
     }
 
     // ---- Wire up events -----------------------------------------------
-    testInboundBtn.addEventListener('click', showIncomingCall);
     acceptBtn.addEventListener('click', acceptCall);
     declineBtn.addEventListener('click', declineCall);
     voicemailBtn.addEventListener('click', sendToVoicemail);

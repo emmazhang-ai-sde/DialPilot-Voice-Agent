@@ -516,12 +516,7 @@
 <div id="callTimerContainer" class="hidden md:flex items-center gap-2 text-xs font-mono text-white/50">
 <span id="callTimerDot" class="w-1.5 h-1.5 rounded-full bg-white/30"></span>
 <span id="callTimerText" class="font-mono-data text-sm font-bold text-white">00:00</span>
-</div>
-<!-- Test Inbound -->
-<button id="testInboundBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-high/50 border border-white/10 text-on-surface-variant hover:text-white transition-all text-xs font-bold">
-<span class="material-symbols-outlined text-sm">ring_volume</span> Test Inbound
-</button>
-<!-- New Call -->
+</div><!-- New Call -->
 <button id="newCallBtn" type="button" class="flex items-center gap-2 px-4 py-2 rounded-lg fire-btn text-white text-xs font-bold shadow-lg shimmer">
 <span class="material-symbols-outlined text-sm">add</span> New Call
 </button>
@@ -1489,7 +1484,6 @@
     const acceptBtn = document.getElementById('acceptCallBtn');
     const declineBtn = document.getElementById('declineCallBtn');
     const voicemailBtn = document.getElementById('voicemailCallBtn');
-    const testInboundBtn = document.getElementById('testInboundBtn');
 
     const activeBar = document.getElementById('activeCallBar');
     const activeName = document.getElementById('activeCallName');
@@ -1762,7 +1756,6 @@
     }
 
     // ---- Wire up events -----------------------------------------------
-    testInboundBtn?.addEventListener('click', showIncomingCall);
     acceptBtn?.addEventListener('click', acceptCall);
     declineBtn?.addEventListener('click', declineCall);
     voicemailBtn?.addEventListener('click', sendToVoicemail);

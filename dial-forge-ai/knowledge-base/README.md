@@ -1,6 +1,6 @@
 # Knowledge bases
 
-Per-company knowledge for the SIP voice agent. `companies.json` maps each company key to its display name, extension, TTS voice, legacy `kb_file`, and `knowledge_profile_id`.
+Per-company knowledge for the voice agent runtime. `companies.json` maps each company key to its display name, extension, TTS voice, legacy `kb_file`, and `knowledge_profile_id`.
 
 ## Runtime vocabulary
 

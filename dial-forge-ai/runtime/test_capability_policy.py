@@ -1,12 +1,12 @@
 import json
 import unittest
 
-from runtime_capability_policy import (
+from runtime.capability_policy import (
     CapabilityCallBudgetExceeded,
     RuntimeCapabilityCallBudget,
     serialize_tool_result,
 )
-from runtime_vocabulary import CapabilityKind, RuntimeCapability
+from runtime.vocabulary import CapabilityKind, RuntimeCapability
 
 
 class RuntimeCapabilityPolicyTest(unittest.TestCase):

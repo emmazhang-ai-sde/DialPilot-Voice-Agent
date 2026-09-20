@@ -7,7 +7,7 @@ actual retrieval, stage mutation, and human handoff handlers.
 
 from __future__ import annotations
 
-from runtime_vocabulary import (
+from runtime.vocabulary import (
     CapabilityKind,
     RuntimeCapability,
     RuntimeContext,

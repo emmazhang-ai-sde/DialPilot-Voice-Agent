@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from agent_registry import AgentConfig
+from runtime.agent_registry import AgentConfig
 
 
 VALID_OWNERS = {"ai", "human"}

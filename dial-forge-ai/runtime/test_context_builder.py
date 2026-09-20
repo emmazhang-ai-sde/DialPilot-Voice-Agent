@@ -1,9 +1,9 @@
 import unittest
 
-from agent_registry import AgentConfig
-from call_session import CallSession
-from knowledge_base_registry import KnowledgeBaseRegistry, KnowledgeProfileValidationError
-from runtime_context_builder import RuntimeContextBuilderError, build_runtime_context
+from runtime.agent_registry import AgentConfig
+from communication.call_session import CallSession
+from rag.knowledge_base_registry import KnowledgeBaseRegistry, KnowledgeProfileValidationError
+from runtime.context_builder import RuntimeContextBuilderError, build_runtime_context
 
 
 PROFILES = {

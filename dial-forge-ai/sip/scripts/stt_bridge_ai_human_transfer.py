@@ -9,7 +9,7 @@ Amy's original, everything else (Modulate connection, transcript queue, Groq)
 untouched:
 
 - **Audio in (Step 2):** instead of a PyAudio mic stream, audio arrives as RTP
-  from an Asterisk `externalMedia` channel (via verify_ari.py's ARI
+  from an Asterisk `externalMedia` channel (via sip/asterisk/verify_ari.py's ARI
   answer/Stasis pattern), gets stripped of its RTP header, and is queued for
   the same Modulate streaming connection Amy's original script already used.
 - **Audio out (Step 3):** instead of playing Deepgram Aura's reply locally via
@@ -38,13 +38,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import requests
 from websocket import create_connection
 
-from agent_registry import AgentRegistry
-from call_session import CallSession
-from capability_registry import CapabilityRegistry
-from capability_executor import execute_capability_call
-from knowledge_base_registry import KnowledgeBaseRegistry
-from runtime_context_builder import build_runtime_context
-from runtime_capability_policy import (
+from runtime.agent_registry import AgentRegistry
+from communication.call_session import CallSession
+from runtime.capability_registry import CapabilityRegistry
+from runtime.capability_executor import execute_capability_call
+from rag.knowledge_base_registry import KnowledgeBaseRegistry
+from runtime.context_builder import build_runtime_context
+from runtime.capability_policy import (
     DEFAULT_MAX_TOOL_RESULT_CHARS,
     CapabilityCallBudgetExceeded,
     RuntimeCapabilityCallBudget,
@@ -171,7 +171,7 @@ if _missing:
 RATE = 16000
 CHANNELS = 1
 
-# --- STEP 2 ADDITION: ARI config (same as verify_ari.py) ---
+# --- STEP 2 ADDITION: ARI config (same as sip/asterisk/verify_ari.py) ---
 ARI_HOST = "localhost:8088"
 ARI_USER = "sip-mvp-user"
 ARI_PASSWORD = "changeme_use_a_real_secret"
@@ -211,10 +211,10 @@ current_channel_id = None
 # its own knowledge base + TTS voice, chosen per call by the number the caller
 # dialed. The dialplan passes the company key as a Stasis() argument
 # (Stasis(sip-mvp-app,pacificbeef) for 1000, ...,globifye for 2000); see
-# extensions.conf [sip-mvp] and the step 5 demo-console doc. sip/knowledge-base/
+# extensions.conf [sip-mvp] and the step 5 demo-console doc. knowledge-base/
 # companies.json is the shared source of truth -- the demo UI server reads the
 # same file. ---
-_KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge-base")
+_KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "knowledge-base")
 
 # Behavior rules shared by every company's agent -- only the identity line and
 # the knowledge base below it change per company.
@@ -666,7 +666,7 @@ def modulate_worker():
 
 # --- STEP 2 ADDITION: ARI control -- answers the call and bridges it with a
 # new externalMedia channel so Asterisk starts forwarding RTP to
-# UDP_LISTEN_PORT. Mirrors verify_ari.py's StasisStart/answer pattern. ---
+# UDP_LISTEN_PORT. Mirrors sip/asterisk/verify_ari.py's StasisStart/answer pattern. ---
 def ari_post(path, **params):
     resp = requests.post(
         f"http://{ARI_HOST}/ari{path}",

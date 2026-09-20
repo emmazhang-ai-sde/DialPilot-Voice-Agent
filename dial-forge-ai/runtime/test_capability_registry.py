@@ -1,12 +1,12 @@
 import unittest
 
-from capability_registry import (
+from runtime.capability_registry import (
     CapabilityRegistry,
     DuplicateCapabilityError,
     RETRIEVE_COMPANY_KB,
     UnknownCapabilityError,
 )
-from runtime_vocabulary import (
+from runtime.vocabulary import (
     CapabilityKind,
     KnowledgeBaseResource,
     RuntimeContext,

@@ -1,6 +1,6 @@
 """Agent registry contract for routing inbound calls to company voice agents.
 
-The first data source is the legacy ``sip/knowledge-base/companies.json`` file.
+The first data source is the legacy ``knowledge-base/companies.json`` file.
 The public API mirrors the future Customer Registration / Dashboard model, so
 the call runtime can stop depending on fixed 1000/2000 extension mappings.
 """

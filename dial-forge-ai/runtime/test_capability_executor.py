@@ -1,11 +1,11 @@
 import unittest
 
-from capability_executor import (
+from runtime.capability_executor import (
     CapabilityExecutionError,
     CapabilityNotAllowedError,
     execute_capability_call,
 )
-from runtime_vocabulary import KnowledgeBaseResource, RuntimeContext, StageTransition
+from runtime.vocabulary import KnowledgeBaseResource, RuntimeContext, StageTransition
 
 
 class CapabilityExecutorTest(unittest.TestCase):

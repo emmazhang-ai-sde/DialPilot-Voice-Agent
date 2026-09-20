@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_registry import AgentConfig
-from call_session import CallSession
-from knowledge_base_registry import KnowledgeBaseRegistry
-from runtime_vocabulary import RuntimeContext, StageTransition
+from runtime.agent_registry import AgentConfig
+from communication.call_session import CallSession
+from rag.knowledge_base_registry import KnowledgeBaseRegistry
+from runtime.vocabulary import RuntimeContext, StageTransition
 
 
 class RuntimeContextBuilderError(ValueError):

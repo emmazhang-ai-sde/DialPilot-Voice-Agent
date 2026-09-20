@@ -1,6 +1,6 @@
 import unittest
 
-from agent_registry import AgentRegistry, UnknownAgentError
+from runtime.agent_registry import AgentRegistry, UnknownAgentError
 
 
 COMPANIES = {

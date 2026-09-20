@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from capability_registry import CapabilityRegistry, REQUEST_HANDOFF, RETRIEVE_COMPANY_KB
-import rag_retrieval
-from runtime_vocabulary import (
+from runtime.capability_registry import CapabilityRegistry, REQUEST_HANDOFF, RETRIEVE_COMPANY_KB
+from rag import retrieval as rag_retrieval
+from runtime.vocabulary import (
     CapabilityKind,
     KnowledgeBaseResource,
     RuntimeCapability,

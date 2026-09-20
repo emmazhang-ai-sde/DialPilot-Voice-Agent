@@ -1,7 +1,7 @@
 import unittest
 
-from agent_registry import AgentConfig
-from call_session import CallSession
+from runtime.agent_registry import AgentConfig
+from communication.call_session import CallSession
 
 
 AGENT = AgentConfig(

@@ -1,6 +1,6 @@
 import unittest
 
-from runtime_vocabulary import (
+from runtime.vocabulary import (
     CapabilityKind,
     INITIAL_CAPABILITY_KINDS,
     KnowledgeBaseResource,

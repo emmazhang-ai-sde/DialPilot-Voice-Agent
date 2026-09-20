@@ -179,10 +179,10 @@ current_channel_id = None
 # its own knowledge base + TTS voice, chosen per call by the number the caller
 # dialed. The dialplan passes the company key as a Stasis() argument
 # (Stasis(sip-mvp-app,pacificbeef) for 1000, ...,globifye for 2000); see
-# extensions.conf [sip-mvp] and the step 5 demo-console doc. sip/knowledge-base/
+# extensions.conf [sip-mvp] and the step 5 demo-console doc. knowledge-base/
 # companies.json is the shared source of truth -- the demo UI server reads the
 # same file. ---
-_KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge-base")
+_KB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "knowledge-base")
 
 # Behavior rules shared by every company's agent -- only the identity line and
 # the knowledge base below it change per company.

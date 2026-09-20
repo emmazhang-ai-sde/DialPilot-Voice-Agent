@@ -17,6 +17,7 @@ SIP_DEMO_PREFIX = '/sip-demo'
 SIP_DEMO_BASE_URL = 'http://127.0.0.1:8400'
 BRIDGE_CONTROL_URL = 'http://127.0.0.1:8500'
 FRONTEND_PROXY_HEADER = 'X-DialForge-Frontend-Proxy'
+SIP_RUNTIME_GLOBAL_SCRIPT = b'<script src="/APIintegration/sipRuntimeGlobal.js" defer></script>'
 DEMO_USERS_PATH = Path(__file__).with_name('product_demo_users.json')
 DEMO_CONTACTS_PATH = Path(__file__).with_name('product_demo_contacts.json')
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -76,7 +77,10 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
         # If requesting root path, serve landingPage.html
         if self.path == '/' or self.path == '':
             self.path = '/landingPage.html'
-        
+
+        if self._serve_static_html_with_runtime_watcher():
+            return
+
         # Call parent class method to handle the request
         super().do_GET()
 
@@ -369,6 +373,34 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Length', str(len(response_body)))
         self.end_headers()
         self.wfile.write(response_body)
+
+    def _serve_static_html_with_runtime_watcher(self):
+        request_path = urllib.parse.urlparse(self.path).path
+        if not request_path.endswith('.html'):
+            return False
+
+        fs_path = Path(self.translate_path(self.path))
+        if not fs_path.is_file() or fs_path.suffix.lower() != '.html':
+            return False
+
+        try:
+            body = fs_path.read_bytes()
+        except OSError:
+            return False
+
+        if SIP_RUNTIME_GLOBAL_SCRIPT not in body and request_path not in (
+            '/activeCall.html',
+            '/login.html',
+        ):
+            body = body.replace(b'</body>', SIP_RUNTIME_GLOBAL_SCRIPT + b'\n</body>', 1)
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
 
     def _proxy_bridge_runtime(self, path):
         query = ''

@@ -37,14 +37,14 @@ localHost/product_demo_users.json
 Seed or refresh the demo users in Supabase:
 
 ```bash
-python3 localHost/sync_product_demo_users_to_supabase.py
+python3 ../dial-forge-ai/db/scripts/sync_product_demo_users_to_supabase.py
 ```
 
 Seed or refresh the GlobiFYE demo contacts that were previously hardcoded in
 static product screens such as `powerDialer.html`:
 
 ```bash
-python3 localHost/sync_product_demo_contacts_to_supabase.py
+python3 ../dial-forge-ai/db/scripts/sync_product_demo_contacts_to_supabase.py
 ```
 
 The current Supabase `contacts` table stores the shared CRM basics:
@@ -55,7 +55,7 @@ are kept in `product_demo_contacts.json` for the next schema/API step.
 Seed or refresh the GlobiFYE power dialer queue from those contacts:
 
 ```bash
-python3 localHost/sync_product_demo_call_queue_to_supabase.py
+python3 ../dial-forge-ai/db/scripts/sync_product_demo_call_queue_to_supabase.py
 ```
 
 The local product API exposes the queue for the signed-in user's organization:
@@ -94,7 +94,7 @@ curl -s -X PATCH http://localhost:8000/api/call-queue/14 \
 Power Dialer outcome/event persistence is defined in:
 
 ```text
-dial-forge-ai/ai-pipeline/supabase/migrations/002_call_queue_events.sql
+dial-forge-ai/db/migrations/002_call_queue_events.sql
 ```
 
 Apply that SQL once in the shared Supabase project before expecting event rows

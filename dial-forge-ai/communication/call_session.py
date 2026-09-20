@@ -40,6 +40,8 @@ class CallSession:
     human_endpoint: str | None = None
     human_caller_id: str | None = None
     human_invite_status: str | None = None
+    output_stream_url: str | None = None
+    output_stream_channel_id: str | None = None
     handoff_accept_status: str | None = None
     handoff_accepted_by: str | None = None
     handoff_accept_source: str | None = None
@@ -96,6 +98,8 @@ class CallSession:
         self.human_endpoint = None
         self.human_caller_id = None
         self.human_invite_status = None
+        self.output_stream_url = None
+        self.output_stream_channel_id = None
         self.handoff_accept_status = None
         self.handoff_accepted_by = None
         self.handoff_accept_source = None
@@ -132,6 +136,10 @@ class CallSession:
                 "caller_channel_id": self.caller_channel_id,
                 "ai_media_channel_id": self.ai_media_channel_id,
                 "human_channel_id": self.human_channel_id,
+            },
+            "output_stream": {
+                "url": self.output_stream_url,
+                "channel_id": self.output_stream_channel_id,
             },
             "handoff": {
                 "human_endpoint": self.human_endpoint,
@@ -287,6 +295,30 @@ class CallSession:
             self.append_event("ai_playback_cleared", playback_id=self.current_playback_id)
         self.current_playback_id = None
 
+    def set_output_stream(
+        self,
+        *,
+        stream_url: str,
+        channel_id: str | None = None,
+    ) -> None:
+        self.output_stream_url = stream_url
+        self.output_stream_channel_id = channel_id
+        self.append_event(
+            "ai_output_stream_started",
+            output_stream_url=stream_url,
+            output_stream_channel_id=channel_id,
+        )
+
+    def clear_output_stream(self) -> None:
+        if self.output_stream_url or self.output_stream_channel_id:
+            self.append_event(
+                "ai_output_stream_cleared",
+                output_stream_url=self.output_stream_url,
+                output_stream_channel_id=self.output_stream_channel_id,
+            )
+        self.output_stream_url = None
+        self.output_stream_channel_id = None
+
     def set_owner(
         self,
         owner: str,
@@ -343,6 +375,8 @@ class CallSession:
         self.human_endpoint = None
         self.human_caller_id = None
         self.human_invite_status = None
+        self.output_stream_url = None
+        self.output_stream_channel_id = None
         self.handoff_accept_status = None
         self.handoff_accepted_by = None
         self.handoff_accept_source = None

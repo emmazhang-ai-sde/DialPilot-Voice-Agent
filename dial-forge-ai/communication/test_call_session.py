@@ -62,6 +62,10 @@ class CallSessionTest(unittest.TestCase):
         session = CallSession.from_agent(AGENT, call_session_id="call-1")
         session.set_owner("human")
         session.set_room(bridge_id="bridge-old", ai_media_channel_id="media-old")
+        session.set_output_stream(
+            stream_url="asterisk-output://old",
+            channel_id="output-old",
+        )
         session.invite_human(
             endpoint="PJSIP/old-sales",
             caller_id="Old Sales",
@@ -85,6 +89,8 @@ class CallSessionTest(unittest.TestCase):
         self.assertEqual(session.caller_channel_id, "caller-new")
         self.assertIsNone(session.bridge_id)
         self.assertIsNone(session.ai_media_channel_id)
+        self.assertIsNone(session.output_stream_url)
+        self.assertIsNone(session.output_stream_channel_id)
         self.assertIsNone(session.human_channel_id)
         self.assertIsNone(session.human_endpoint)
         self.assertIsNone(session.human_caller_id)
@@ -115,6 +121,10 @@ class CallSessionTest(unittest.TestCase):
         )
 
         session.set_room(bridge_id="bridge-1", ai_media_channel_id="media-1")
+        session.set_output_stream(
+            stream_url="asterisk-output://output-1",
+            channel_id="output-1",
+        )
         session.invite_human(
             endpoint="PJSIP/sales-endpoint",
             caller_id="Sales",
@@ -129,6 +139,8 @@ class CallSessionTest(unittest.TestCase):
         self.assertIsNone(session.caller_channel_id)
         self.assertIsNone(session.bridge_id)
         self.assertIsNone(session.ai_media_channel_id)
+        self.assertIsNone(session.output_stream_url)
+        self.assertIsNone(session.output_stream_channel_id)
         self.assertIsNone(session.human_channel_id)
         self.assertIsNone(session.current_playback_id)
         self.assertEqual(
@@ -136,6 +148,7 @@ class CallSessionTest(unittest.TestCase):
             [
                 "call_started",
                 "call.room_created",
+                "ai_output_stream_started",
                 "human.invite_created",
                 "human.joined",
                 "ai_playback_started",
@@ -168,6 +181,10 @@ class CallSessionTest(unittest.TestCase):
                     "ai_media_channel_id": "media-1",
                     "human_channel_id": None,
                 },
+                "output_stream": {
+                    "url": None,
+                    "channel_id": None,
+                },
                 "handoff": {
                     "human_endpoint": None,
                     "human_caller_id": None,
@@ -190,6 +207,36 @@ class CallSessionTest(unittest.TestCase):
                 },
             },
         )
+
+    def test_output_stream_state_is_recorded_and_cleared(self):
+        session = CallSession.from_agent(AGENT, call_session_id="call-1")
+        session.start_call(
+            caller_channel_id="caller-1",
+            agent=AGENT,
+            conversation_history=[],
+        )
+
+        session.set_output_stream(
+            stream_url="asterisk-output://output-1",
+            channel_id="output-1",
+        )
+
+        self.assertEqual(session.output_stream_url, "asterisk-output://output-1")
+        self.assertEqual(session.output_stream_channel_id, "output-1")
+        self.assertEqual(
+            session.room_debug_payload()["output_stream"],
+            {
+                "url": "asterisk-output://output-1",
+                "channel_id": "output-1",
+            },
+        )
+        self.assertEqual(session.events[-1]["type"], "ai_output_stream_started")
+
+        session.clear_output_stream()
+
+        self.assertIsNone(session.output_stream_url)
+        self.assertIsNone(session.output_stream_channel_id)
+        self.assertEqual(session.events[-1]["type"], "ai_output_stream_cleared")
 
     def test_human_invite_status_moves_from_ringing_to_joined(self):
         session = CallSession.from_agent(AGENT, call_session_id="call-1")

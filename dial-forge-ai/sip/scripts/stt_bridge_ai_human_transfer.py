@@ -20,12 +20,10 @@ untouched:
 Original attribution: Amy, amy/llm-testing/agent-test6.py.
 """
 
-import array
 import os
 import queue
 import subprocess
 import threading
-import wave
 from deepgram import DeepgramClient
 from groq import Groq
 from websockets.sync.client import connect as ws_connect
@@ -38,6 +36,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import requests
 from websocket import create_connection
 
+from asterisk_streaming_output import (
+    AsteriskStreamingOutputManager,
+    AsteriskStreamingRouteConfig,
+)
 from runtime.agent_registry import AgentRegistry
 from communication.call_session import CallSession
 from runtime.capability_registry import CapabilityRegistry
@@ -50,6 +52,21 @@ from runtime.capability_policy import (
     RuntimeCapabilityCallBudget,
     serialize_tool_result,
 )
+from voice_frame_bridge import BargeInDetectionConfig, LiveAudioFrameBridge
+from voice_output_sink import (
+    AriFilePlaybackConfig,
+    AssistantSpeechHandle,
+    OutputSinkUnavailable,
+    StreamingWebSocketOutputConfig,
+    create_output_sink,
+)
+from voice_provider_tuning import default_env_files, load_provider_tuning
+from voice_runtime_frames import (
+    AssistantTextFrame,
+    UserTurnFrame,
+    user_turn_frame_from_committed,
+)
+from voice_turn_state import BargeInDecision, BargeInGate, TurnCompletionGate
 
 # set up timer for timestamps
 _START = time.time()
@@ -128,35 +145,13 @@ threading.Thread(target=_ui_sender, daemon=True).start()
 threading.Thread(target=_ui_heartbeat, daemon=True).start()
 
 
-# --- STEP 2 CHANGE: load API keys from ai-pipeline/.env.local instead of
-# hardcoding them (agent-test6.py had them as blank string literals). Small
-# zero-dependency parser -- avoids adding python-dotenv to the venv. Path is
-# resolved relative to this file so it works regardless of the cwd. ---
-def _load_env_local():
-    env_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "ai-pipeline", ".env.local",
-    )
-    env = {}
-    try:
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                env[key.strip()] = value.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        print(f"WARNING: {env_path} not found -- API keys will be empty")
-    return env
-
-
-_env = _load_env_local()
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROVIDER_TUNING = load_provider_tuning(env_files=default_env_files(_SCRIPT_DIR))
 
 # api keys
-DEEPGRAM_KEY = _env.get("DEEPGRAM_API_KEY", "")
-GROQ_KEY = _env.get("GROQ_API_KEY", "")
-MODULATE_KEY = _env.get("MODULATE_API_KEY", "")
+DEEPGRAM_KEY = PROVIDER_TUNING.deepgram_api_key
+GROQ_KEY = PROVIDER_TUNING.groq_api_key
+MODULATE_KEY = PROVIDER_TUNING.modulate_api_key
 
 # fail loud if a required key is missing, rather than hitting a confusing
 # 4003 (Modulate auth reject) or 401 deep inside a worker thread
@@ -167,9 +162,12 @@ _missing = [n for n, v in
 if _missing:
     print("WARNING: missing keys in .env.local:", ", ".join(_missing))
 
+log("PROVIDER_TUNING", "loaded", payload=PROVIDER_TUNING.redacted_payload())
+
 # setup parameters
-RATE = 16000
-CHANNELS = 1
+RATE = PROVIDER_TUNING.modulate_sample_rate
+CHANNELS = PROVIDER_TUNING.modulate_num_channels
+TTS_SAMPLE_RATE = PROVIDER_TUNING.deepgram_tts_sample_rate
 
 # --- STEP 2 ADDITION: ARI config (same as sip/asterisk/verify_ari.py) ---
 ARI_HOST = "localhost:8088"
@@ -338,6 +336,26 @@ client = Groq(api_key=GROQ_KEY)
 # queues
 transcript_queue = queue.Queue()
 tts_queue = queue.Queue()
+turn_gate = TurnCompletionGate(PROVIDER_TUNING.turn_config())
+barge_in_gate = BargeInGate()
+audio_frame_bridge = LiveAudioFrameBridge(
+    input_sample_rate=RATE,
+    input_num_channels=CHANNELS,
+    tts_sample_rate=TTS_SAMPLE_RATE,
+    should_suppress_input=turn_gate.is_input_suppressed,
+    echo_tail_ms=PROVIDER_TUNING.turn_playback_echo_tail_ms,
+    barge_in_detection_config=BargeInDetectionConfig(
+        enabled=PROVIDER_TUNING.barge_in_detection_enabled,
+        rms_threshold=PROVIDER_TUNING.barge_in_rms_threshold,
+        min_audio_ms=PROVIDER_TUNING.barge_in_min_audio_ms,
+        reset_gap_ms=PROVIDER_TUNING.barge_in_reset_gap_ms,
+    ),
+)
+tts_playback_sink = None
+streaming_output_manager = None
+active_streaming_websocket_url = None
+current_assistant_speech_handle = None
+_assistant_speech_counter = 0
 
 # --- STEP 2 CHANGE: audio now arrives via RTP from Asterisk's externalMedia
 # channel instead of a PyAudio mic stream. rtp_listener() (below) populates
@@ -352,6 +370,7 @@ audio_queue = queue.Queue()
 # UDP for the externalMedia stream, strips the 12-byte RTP header, and queues
 # the raw PCM payload for modulate_worker's send_audio. ---
 def rtp_listener():
+    global current_playback_id
     sock = udp_socket.socket(udp_socket.AF_INET, udp_socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", UDP_LISTEN_PORT))
     log("RTP", f"listening on UDP {UDP_LISTEN_PORT}")
@@ -362,16 +381,36 @@ def rtp_listener():
             log("RTP", f"first packet received ({len(packet)} bytes)")
             first = False
         raw = packet[RTP_HEADER_LEN:]
-        # --- BUGFIX (2026-07-07): Asterisk externalMedia slin16 is BIG-endian
-        # (RTP network byte order), but Modulate's stream is configured s16le
-        # (little-endian). Feeding it as-is delivered byte-swapped noise
-        # (verified: little-endian read of the RTP gave peak 32768 / rms 18221 =
-        # full-scale garbage; byte-swapped gave clean speech ~peak 5000 / rms
-        # 400). Swap each 16-bit sample so audio_queue holds valid s16le. ---
-        samples = array.array("h")
-        samples.frombytes(raw[: len(raw) - (len(raw) % 2)])
-        samples.byteswap()  # big-endian slin16 -> native little-endian s16le
-        audio_queue.put(samples.tobytes())
+        frame = audio_frame_bridge.input_frame_from_rtp_payload(raw)
+        suppression_reason = current_input_suppression_reason()
+        candidate = audio_frame_bridge.detect_barge_in_candidate(frame)
+        if candidate:
+            decision = barge_in_gate.decide_audio_candidate(
+                candidate,
+                suppression_reason=suppression_reason,
+            )
+            if _interrupt_current_ai_audio(
+                decision=decision,
+                candidate=candidate,
+                barge_in=True,
+            ):
+                audio_frame_bridge.reset_barge_in_candidate()
+                audio_queue.put(frame.audio)
+                continue
+            log(
+                "BARGE_IN",
+                "audio candidate suppressed",
+                payload={
+                    "reason": decision.reason,
+                    "suppression_reason": suppression_reason,
+                    "audio_rms": candidate.audio_rms,
+                    "barge_in_audio_ms": candidate.accumulated_audio_ms,
+                    "rms_threshold": candidate.threshold,
+                    "min_audio_ms": candidate.min_audio_ms,
+                },
+            )
+        if audio_frame_bridge.should_forward_input_frame(frame):
+            audio_queue.put(frame.audio)
 
 
 # LLM worker - Groq [GPT OSS 120B]
@@ -379,7 +418,10 @@ def groq_worker():
     global conversation_history
 
     while True:
-        transcript = transcript_queue.get()
+        user_turn_frame = transcript_queue.get()
+        if not isinstance(user_turn_frame, UserTurnFrame):
+            user_turn_frame = UserTurnFrame(text=str(user_turn_frame), epoch=epoch)
+        transcript = user_turn_frame.text
 
         # --- TRANSFER: human is live -- transcript still logged upstream, but
         # don't feed the LLM or generate a reply. ---
@@ -388,7 +430,14 @@ def groq_worker():
             log("SKIP_TURN", "owner is HUMAN; AI is listening but not responding", payload=current_session.room_debug_payload())
             continue
 
-        turn_epoch = epoch  # stamp this turn; drop it if holder switches mid-turn
+        turn_epoch = user_turn_frame.epoch
+        if turn_epoch != epoch:
+            log(
+                "SKIP_TURN",
+                "stale user turn frame; epoch changed before LLM turn",
+                payload={"frame_epoch": turn_epoch, "current_epoch": epoch},
+            )
+            continue
 
         conversation_history.append({
             "role": "user",
@@ -452,7 +501,7 @@ def groq_worker():
                     if turn_epoch != epoch:   # holder switched -- abandon this turn
                         break
                     if not defer_tts_until_tool_decision:
-                        tts_queue.put((sentence, turn_epoch))
+                        enqueue_assistant_text(sentence, turn_epoch)
                     sentence = ""
 
             if SHOW_LLM_STREAM:
@@ -476,7 +525,7 @@ def groq_worker():
                         "tool round limit reached; skipping additional model call",
                     )
                     if turn_epoch == epoch:
-                        tts_queue.put((fallback_response, turn_epoch))
+                        enqueue_assistant_text(fallback_response, turn_epoch)
                     conversation_history.append({
                         "role": "assistant",
                         "content": fallback_response,
@@ -487,9 +536,9 @@ def groq_worker():
 
             if turn_epoch == epoch:
                 if defer_tts_until_tool_decision and full_response:
-                    tts_queue.put((full_response, turn_epoch))
+                    enqueue_assistant_text(full_response, turn_epoch)
                 elif sentence:
-                    tts_queue.put((sentence, turn_epoch))
+                    enqueue_assistant_text(sentence, turn_epoch)
 
             log("LLM reply", full_response, ms=_ms())
 
@@ -507,97 +556,128 @@ def groq_worker():
             current_session.conversation_history = conversation_history
 
 
-# --- STEP 3 CHANGE: was local playback via sounddevice
-# (`stream = sd.OutputStream(...); stream.write(samples)`). Reply audio is
-# now written to a file, downsampled for Asterisk, copied into the
-# asterisk-mvp container, and played into the live call via ARI. ---
-_reply_counter = 0
-
-
 def play_deepgram(text):
-    global _reply_counter, current_playback_id
+    global current_playback_id, current_assistant_speech_handle
 
     if current_channel_id is None:
         log("TTS", f"no active call channel, skipping playback for: {text}")
         return
 
-    os.makedirs(TTS_STAGING_DIR, exist_ok=True)
+    speech_handle = new_assistant_speech_handle()
+    current_assistant_speech_handle = speech_handle
 
-    pcm_chunks = []
+    streaming_output = is_streaming_output_sink()
+    if streaming_output:
+        turn_gate.on_playback_started(speech_handle.turn_id)
+        audio_frame_bridge.mark_ai_speaking()
+        output_frames = iter_deepgram_output_frames(text)
+    else:
+        output_frames = list(iter_deepgram_output_frames(text))
+    try:
+        result = get_tts_playback_sink().play(
+            frames=output_frames,
+            channel_id=current_channel_id,
+            speech_handle=speech_handle,
+        )
+    except OutputSinkUnavailable as exc:
+        log("TTS", f"output sink unavailable: {exc}")
+        raise
+    if result is None:
+        log("TTS", "no audio frames generated; skipping playback")
+        if streaming_output:
+            turn_gate.on_playback_interrupted(speech_handle.turn_id)
+            audio_frame_bridge.mark_ai_interrupted()
+        current_assistant_speech_handle = None
+        return
+
+    current_playback_id = result.playback_id
+    current_session.set_playback(current_playback_id)
+    if current_playback_id:
+        turn_gate.on_playback_started(current_playback_id)
+        audio_frame_bridge.mark_ai_speaking()
+    elif streaming_output:
+        if result.interrupted:
+            turn_gate.on_playback_interrupted(speech_handle.turn_id)
+            audio_frame_bridge.mark_ai_interrupted()
+        else:
+            turn_gate.on_playback_finished(speech_handle.turn_id)
+            audio_frame_bridge.mark_ai_done_speaking()
+        current_assistant_speech_handle = None
+    log("TTS played", result.sound_name, ms=_ms())
+
+
+def iter_deepgram_output_frames(text):
     first = True
     for chunk in dg.speak.v1.audio.generate(
         text=text,
         model=current_voice,  # MULTI-COMPANY: per-call voice set on StasisStart
-        encoding="linear16",
-        sample_rate=24000,
-        container="none",
+        encoding=PROVIDER_TUNING.deepgram_tts_encoding,
+        sample_rate=TTS_SAMPLE_RATE,
+        container=PROVIDER_TUNING.deepgram_tts_container,
     ):
         if first:
             log("TTS audio", ms=_ms(), blank_before=True)
             first = False
-        pcm_chunks.append(chunk)
+        yield audio_frame_bridge.output_frame_from_tts_chunk(chunk)
 
-    _reply_counter += 1
-    sound_name = f"reply_{_reply_counter}"
-    raw_wav_path = os.path.join(TTS_STAGING_DIR, f"{sound_name}_24k.wav")
-    asterisk_wav_path = os.path.join(TTS_STAGING_DIR, f"{sound_name}.wav")
 
-    # Aura returns headerless linear16 PCM (container="none") -- wrap it in a
-    # WAV header at its native 24kHz before ffmpeg downsamples it.
-    with wave.open(raw_wav_path, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(24000)
-        wf.writeframes(b"".join(pcm_chunks))
-
-    # Asterisk plays back most reliably at 8kHz/16kHz mono WAV (step3 doc, section 3)
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", raw_wav_path, "-ar", "8000", "-ac", "1", "-f", "wav", asterisk_wav_path],
-        check=True,
-        capture_output=True,
+def new_assistant_speech_handle():
+    global _assistant_speech_counter
+    _assistant_speech_counter += 1
+    return AssistantSpeechHandle(
+        turn_id=f"assistant-speech-{_assistant_speech_counter}",
+        epoch=epoch,
     )
 
-    subprocess.run(
-        [
-            "docker", "cp", asterisk_wav_path,
-            f"{ASTERISK_CONTAINER}:{SOUNDS_DIR_IN_CONTAINER}/{sound_name}.wav",
-        ],
-        check=True,
-    )
 
-    # --- TRANSFER (step 2): capture the playback id so set_holder("human") can
-    # DELETE /playbacks/{id} and cut the AI off mid-sentence. ---
-    result = ari_post(f"/channels/{current_channel_id}/play", media=f"sound:custom/{sound_name}")
-    current_playback_id = result["id"] if result else None
-    current_session.set_playback(current_playback_id)
-    log("TTS played", sound_name, ms=_ms())
+def is_streaming_output_sink():
+    return PROVIDER_TUNING.tts_output_sink.strip().lower() in {
+        "streaming",
+        "streaming_websocket",
+    }
+
+
+def enqueue_assistant_text(text, turn_epoch):
+    tts_queue.put(AssistantTextFrame(text=text, epoch=turn_epoch))
+
 
 # TTS worker - Deepgram Aura
 def tts_worker():
     while True:
-        # --- TRANSFER (step 2): tts_queue items are (text, turn_epoch) tuples,
-        # so a switch mid-turn drops stale audio at the last moment before playback. ---
-        text, turn_epoch = tts_queue.get()
+        assistant_text_frame = tts_queue.get()
+        if isinstance(assistant_text_frame, AssistantTextFrame):
+            text = assistant_text_frame.text
+            turn_epoch = assistant_text_frame.epoch
+        else:
+            text, turn_epoch = assistant_text_frame
         if turn_epoch != epoch or holder == "human":
             continue  # stale turn or human took over -- drop silently
         log("TTS gen", text)
         play_deepgram(text)
 
+
+def turn_gate_worker():
+    while True:
+        committed = turn_gate.tick()
+        if committed:
+            transcript_queue.put(user_turn_frame_from_committed(committed, epoch=epoch))
+            log(
+                "TURN commit",
+                committed.transcript,
+                ms=_ms(),
+                payload={
+                    "segments": list(committed.segments),
+                    "silence_ms": committed.silence_ms,
+                    "semantic_kind": committed.semantic_kind,
+                    "semantic_reason": committed.semantic_reason,
+                },
+            )
+        time.sleep(0.05)
+
+
 # STT worker - Modulate.ai
 def _modulate_url():
-    # General streaming endpoint — matches what Amy validated in agent-test6.py
-    # (her accuracy/latency testing was all on this endpoint). The English-only
-    # `velma-2-stt-streaming-english-v2` is a later optimization to A/B test
-    # once the loop is proven; don't diverge from Amy's tested config for the MVP.
-    return (
-        f"wss://platform.modulate.ai/api/velma-2-stt-streaming"
-        f"?api_key={MODULATE_KEY}"
-        f"&audio_format=s16le"
-        f"&sample_rate={RATE}"
-        f"&num_channels={CHANNELS}"
-        f"&speaker_diarization=false"
-        f"&partial_results=true"
-    )
+    return PROVIDER_TUNING.modulate_url()
 
 
 def _modulate_session(first_chunk):
@@ -635,14 +715,50 @@ def _modulate_session(first_chunk):
                 if msg_type == "partial_utterance":
                     partial_text = data.get("partial_utterance", {}).get("text", "").strip()
                     if partial_text:
-                        log("STT partial", partial_text, blank_before=first_partial_of_utterance)
-                        first_partial_of_utterance = False
+                        if turn_gate.on_partial(partial_text):
+                            log("STT partial", partial_text, blank_before=first_partial_of_utterance)
+                            first_partial_of_utterance = False
+                        else:
+                            if handle_suppressed_stt_barge_in(
+                                partial_text,
+                                event="partial_utterance",
+                            ):
+                                if turn_gate.on_partial(partial_text):
+                                    log(
+                                        "STT partial",
+                                        partial_text,
+                                        blank_before=first_partial_of_utterance,
+                                    )
+                                    first_partial_of_utterance = False
+                            else:
+                                log(
+                                    "STT suppressed",
+                                    partial_text,
+                                    payload={
+                                        "event": "partial_utterance",
+                                        "reason": current_input_suppression_reason(),
+                                    },
+                                )
 
                 elif msg_type == "utterance":
                     text = data.get("utterance", {}).get("text", "").strip()
                     if text:
-                        transcript_queue.put(text)
-                        log("STT final", text, ms=_ms(), blank_before=True)
+                        if turn_gate.on_final(text):
+                            log("STT final", text, ms=_ms(), blank_before=True)
+                        else:
+                            if handle_suppressed_stt_barge_in(text, event="utterance"):
+                                if turn_gate.on_final(text):
+                                    log("STT final", text, ms=_ms(), blank_before=True)
+                            else:
+                                log(
+                                    "STT suppressed",
+                                    text,
+                                    ms=_ms(),
+                                    payload={
+                                        "event": "utterance",
+                                        "reason": current_input_suppression_reason(),
+                                    },
+                                )
                         first_partial_of_utterance = True
         finally:
             stop.set()
@@ -661,6 +777,7 @@ def modulate_worker():
         try:
             _modulate_session(first_chunk)
         except Exception as e:
+            turn_gate.reset_pending()
             log("STT", f"session ended ({type(e).__name__}); reconnecting on next call")
 
 
@@ -677,6 +794,156 @@ def ari_post(path, **params):
     return resp.json() if resp.text else None
 
 
+def get_tts_playback_sink():
+    global tts_playback_sink
+    streaming_url = PROVIDER_TUNING.tts_streaming_websocket_url
+    if not streaming_url:
+        streaming_url = current_session.output_stream_url or active_streaming_websocket_url or ""
+
+    if is_streaming_output_sink():
+        return create_output_sink(
+            sink_name=PROVIDER_TUNING.tts_output_sink,
+            ari_config=AriFilePlaybackConfig(
+                staging_dir=TTS_STAGING_DIR,
+                asterisk_container=ASTERISK_CONTAINER,
+                sounds_dir_in_container=SOUNDS_DIR_IN_CONTAINER,
+                playback_sample_rate=PROVIDER_TUNING.asterisk_playback_sample_rate,
+            ),
+            ari_post=ari_post,
+            streaming_config=StreamingWebSocketOutputConfig(
+                websocket_url=streaming_url,
+                sample_rate=PROVIDER_TUNING.tts_streaming_sample_rate,
+                num_channels=PROVIDER_TUNING.tts_streaming_num_channels,
+            ),
+            websocket_connect=connect_tts_streaming_transport,
+        )
+
+    if tts_playback_sink is None:
+        tts_playback_sink = create_output_sink(
+            sink_name=PROVIDER_TUNING.tts_output_sink,
+            ari_config=AriFilePlaybackConfig(
+                staging_dir=TTS_STAGING_DIR,
+                asterisk_container=ASTERISK_CONTAINER,
+                sounds_dir_in_container=SOUNDS_DIR_IN_CONTAINER,
+                playback_sample_rate=PROVIDER_TUNING.asterisk_playback_sample_rate,
+            ),
+            ari_post=ari_post,
+        )
+    return tts_playback_sink
+
+
+def connect_tts_streaming_transport(websocket_url):
+    if streaming_output_manager and streaming_output_manager.owns_websocket_url(websocket_url):
+        return streaming_output_manager.connect_transport(websocket_url)
+    return create_connection(websocket_url)
+
+
+def current_input_suppression_reason():
+    frame_reason = audio_frame_bridge.input_suppression_reason()
+    turn_reason = turn_gate.input_suppression_reason()
+    if frame_reason == "external_input_suppression":
+        return turn_reason or frame_reason
+    return frame_reason or turn_reason
+
+
+def handle_suppressed_stt_barge_in(text, *, event):
+    suppression_reason = current_input_suppression_reason()
+    decision = barge_in_gate.decide_transcript(
+        text,
+        suppression_reason=suppression_reason,
+    )
+    if _interrupt_current_ai_audio(
+        decision=decision,
+        transcript=text,
+        barge_in=True,
+    ):
+        return True
+    log(
+        "BARGE_IN",
+        "suppressed STT did not interrupt",
+        payload={
+            "event": event,
+            "reason": decision.reason,
+            "suppression_reason": suppression_reason,
+            "text": decision.text,
+        },
+    )
+    return False
+
+
+def confirm_barge_in_candidate(candidate):
+    decision = barge_in_gate.decide_audio_candidate(
+        candidate,
+        suppression_reason=current_input_suppression_reason(),
+    )
+    return _interrupt_current_ai_audio(
+        decision=decision,
+        candidate=candidate,
+        barge_in=True,
+    )
+
+
+def _interrupt_current_ai_audio(
+    *,
+    decision: BargeInDecision,
+    candidate=None,
+    transcript=None,
+    barge_in=False,
+):
+    global current_playback_id, current_assistant_speech_handle
+    if not decision.should_interrupt:
+        return False
+    with _call_control_lock:
+        speech_handle = current_assistant_speech_handle
+        if speech_handle:
+            speech_handle.cancel()
+        playback_id = current_playback_id
+        playback_marker = playback_id or (speech_handle.turn_id if speech_handle else None)
+        if barge_in:
+            turn_gate.on_barge_in_confirmed(playback_marker)
+        else:
+            turn_gate.on_playback_interrupted(playback_marker)
+        audio_frame_bridge.mark_ai_interrupted()
+        flushed = False
+        if streaming_output_manager and streaming_output_manager.session:
+            try:
+                flushed = streaming_output_manager.flush_current()
+            except Exception as exc:
+                log(
+                    "BARGE_IN",
+                    f"streaming flush failed ({type(exc).__name__}: {exc})",
+                )
+        if playback_id:
+            ari_delete(f"/playbacks/{playback_id}")
+            current_playback_id = None
+            current_session.clear_playback()
+        current_assistant_speech_handle = None
+        payload = {
+            "reason": decision.reason,
+            "suppression_reason": decision.suppression_reason,
+            "transcript": transcript,
+            "playback_id": playback_id,
+            "assistant_turn_id": speech_handle.turn_id if speech_handle else None,
+            "streaming_flushed": flushed,
+            "barge_in": barge_in,
+        }
+        if candidate is not None:
+            payload.update(
+                {
+                    "audio_rms": candidate.audio_rms,
+                    "barge_in_audio_ms": candidate.accumulated_audio_ms,
+                    "rms_threshold": candidate.threshold,
+                    "min_audio_ms": candidate.min_audio_ms,
+                }
+            )
+        log(
+            "BARGE_IN",
+            "confirmed",
+            payload=payload,
+        )
+        return True
+
+
 def ari_delete(path):
     """Best-effort ARI delete -- used to tear down the bridge + externalMedia
     channel when a call ends, so they don't leak (see StasisEnd cleanup)."""
@@ -688,6 +955,71 @@ def ari_delete(path):
         )
     except requests.RequestException:
         pass
+
+
+def get_streaming_output_manager():
+    global streaming_output_manager
+    if streaming_output_manager is None:
+        streaming_output_manager = AsteriskStreamingOutputManager(
+            config=AsteriskStreamingRouteConfig(
+                static_websocket_url=PROVIDER_TUNING.tts_streaming_websocket_url,
+                asterisk_endpoint=PROVIDER_TUNING.tts_streaming_asterisk_endpoint,
+                incoming_base_url=PROVIDER_TUNING.tts_streaming_incoming_base_url,
+                media_server_host=PROVIDER_TUNING.tts_streaming_server_host,
+                media_server_port=PROVIDER_TUNING.tts_streaming_server_port,
+                media_server_path=PROVIDER_TUNING.tts_streaming_server_path,
+                transport_wait_timeout_ms=(
+                    PROVIDER_TUNING.tts_streaming_transport_wait_timeout_ms
+                ),
+                app_name=APP_NAME,
+            ),
+            ari_post=ari_post,
+            ari_delete=ari_delete,
+        )
+    return streaming_output_manager
+
+
+def start_streaming_output_route(bridge_id):
+    global active_streaming_websocket_url
+    if not is_streaming_output_sink():
+        return None
+    session = get_streaming_output_manager().start(bridge_id=bridge_id)
+    if session is None:
+        active_streaming_websocket_url = None
+        current_session.clear_output_stream()
+        log(
+            "STREAMING_OUTPUT",
+            "no websocket route configured; streaming sink will fail until a URL is available",
+        )
+        return None
+    active_streaming_websocket_url = session.websocket_url
+    current_session.set_output_stream(
+        stream_url=session.websocket_url,
+        channel_id=session.output_channel_id,
+    )
+    if session.output_channel_id:
+        _streaming_output_channel_ids.add(session.output_channel_id)
+    log(
+        "STREAMING_OUTPUT",
+        "route ready",
+        payload={
+            "websocket_url_configured": bool(active_streaming_websocket_url),
+            "output_channel_id": session.output_channel_id,
+            "bridge_id": session.bridge_id,
+        },
+    )
+    return session
+
+
+def stop_streaming_output_route():
+    global active_streaming_websocket_url
+    if streaming_output_manager and streaming_output_manager.session:
+        output_channel_id = streaming_output_manager.session.output_channel_id
+        if output_channel_id:
+            _streaming_output_channel_ids.discard(output_channel_id)
+        streaming_output_manager.stop()
+    active_streaming_websocket_url = None
+    current_session.clear_output_stream()
 
 
 # --- BUGFIX (2026-07-13): every call used to leak its mixing bridge + its
@@ -708,6 +1040,7 @@ current_ext_channel_id = None
 # channels/bridges. Track our own externalMedia channel IDs so their
 # StasisStart is recognized and skipped, not treated as a new call. ---
 _external_media_channel_ids = set()
+_streaming_output_channel_ids = set()
 
 # --- TRANSFER (step 1): same idea for the salesperson leg -- we originate it
 # ourselves into the same mixing bridge, muted. Its StasisStart must be
@@ -1068,6 +1401,7 @@ def create_asterisk_room(caller_channel_id):
     current_bridge_id = bridge_id
     current_ext_channel_id = ext_channel["id"]
     current_session.set_room(bridge_id=bridge_id, ai_media_channel_id=ext_channel["id"])
+    start_streaming_output_route(bridge_id)
     log("ROOM", "created", payload=current_session.room_debug_payload())
     log("CALL", f"bridged {caller_channel_id} + externalMedia {ext_channel['id']} into bridge {bridge_id}")
     return bridge_id, ext_channel["id"]
@@ -1117,7 +1451,7 @@ def bridge_call_to_external_media(caller_channel_id):
 
 
 def _apply_owner_side_effects():
-    global holder, epoch, current_playback_id
+    global holder, epoch, current_playback_id, current_assistant_speech_handle
     holder = current_session.owner
     epoch = current_session.epoch  # invalidate any in-flight turn (checked in groq_worker/tts_worker)
 
@@ -1129,10 +1463,25 @@ def _apply_owner_side_effects():
             auth=(ARI_USER, ARI_PASSWORD),
         )
 
-    if holder == "human" and current_playback_id:
-        ari_delete(f"/playbacks/{current_playback_id}")  # cut AI off mid-sentence
-        current_playback_id = None
-        current_session.clear_playback()
+    if holder == "human":
+        if current_assistant_speech_handle:
+            current_assistant_speech_handle.cancel()
+            current_assistant_speech_handle = None
+            audio_frame_bridge.mark_ai_interrupted()
+            if streaming_output_manager and streaming_output_manager.session:
+                try:
+                    streaming_output_manager.flush_current()
+                except Exception as exc:
+                    log(
+                        "BARGE_IN",
+                        f"streaming flush failed during handoff ({type(exc).__name__}: {exc})",
+                    )
+        if current_playback_id:
+            turn_gate.on_playback_interrupted(current_playback_id)
+            ari_delete(f"/playbacks/{current_playback_id}")  # cut AI off mid-sentence
+            current_playback_id = None
+            current_session.clear_playback()
+            audio_frame_bridge.mark_ai_interrupted()
 
     log("HOLDER", holder)
 
@@ -1379,11 +1728,17 @@ def ensure_sounds_dir():
         raise SystemExit(1)
 
 
+def _playback_id_from_event(event):
+    playback = event.get("playback") or {}
+    return playback.get("id")
+
+
 def ari_event_loop():
     global current_channel_id, current_company, current_voice, conversation_history
     global current_bridge_id, current_ext_channel_id, current_sales_channel_id
     global current_agent_config
-    global holder, epoch, current_playback_id
+    global holder, epoch, current_playback_id, current_assistant_speech_handle
+    global active_streaming_websocket_url
 
     ws_url = f"ws://{ARI_HOST}/ari/events?api_key={ARI_USER}:{ARI_PASSWORD}&app={APP_NAME}"
     log("ARI", f"connecting to ws://{ARI_HOST}/ari/events?api_key=***:***&app={APP_NAME}")
@@ -1408,6 +1763,10 @@ def ari_event_loop():
                 if channel_id in _external_media_channel_ids:
                     # Our own externalMedia channel entering Stasis, not a new
                     # call -- already bridged inside bridge_call_to_external_media().
+                    continue
+                if channel_id in _streaming_output_channel_ids:
+                    # Our own WebSocket output channel entering Stasis, not a
+                    # caller. It was already added to the active bridge.
                     continue
 
                 # --- TRANSFER (step 1): our own salesperson leg answered --
@@ -1443,6 +1802,9 @@ def ari_event_loop():
                     agent=resolution.agent,
                     conversation_history=conversation_history,
                 )
+                turn_gate.reset_all()
+                audio_frame_bridge.reset_gate()
+                current_assistant_speech_handle = None
                 holder = current_session.owner
                 epoch = current_session.epoch
                 current_playback_id = current_session.current_playback_id
@@ -1467,6 +1829,18 @@ def ari_event_loop():
             elif event_type == "StasisEnd":
                 channel_id = event["channel"]["id"]
 
+                if channel_id in _streaming_output_channel_ids:
+                    _streaming_output_channel_ids.discard(channel_id)
+                    if (
+                        streaming_output_manager
+                        and streaming_output_manager.session
+                        and streaming_output_manager.session.output_channel_id == channel_id
+                    ):
+                        streaming_output_manager.session = None
+                        active_streaming_websocket_url = None
+                        current_session.clear_output_stream()
+                    continue
+
                 # --- TRANSFER: our own human leg ending should never strand
                 # the caller. If human already owned the call, return control
                 # to AI; otherwise keep AI as-is and expose the failure.
@@ -1483,6 +1857,7 @@ def ari_event_loop():
                 if channel_id == current_channel_id:
                     log("CALL", f"ended: {channel_id}", blank_before=2)
                     current_channel_id = None
+                    stop_streaming_output_route()
                     # --- BUGFIX (2026-07-13): tear down this call's bridge +
                     # externalMedia channel so they don't leak into the Stasis app. ---
                     if current_ext_channel_id:
@@ -1499,9 +1874,30 @@ def ari_event_loop():
                     current_bridge_id = None
                     current_sales_channel_id = None
                     current_session.end_call()
+                    turn_gate.reset_all()
+                    audio_frame_bridge.reset_gate()
+                    if current_assistant_speech_handle:
+                        current_assistant_speech_handle.cancel()
+                    current_assistant_speech_handle = None
                     holder = current_session.owner
                     epoch = current_session.epoch
                     current_playback_id = current_session.current_playback_id
+
+            elif event_type in ("PlaybackFinished", "PlaybackFailed"):
+                playback_id = _playback_id_from_event(event)
+                if playback_id and playback_id == current_playback_id:
+                    if event_type == "PlaybackFinished":
+                        turn_gate.on_playback_finished(playback_id)
+                        audio_frame_bridge.mark_ai_done_speaking()
+                    else:
+                        turn_gate.on_playback_interrupted(playback_id)
+                        audio_frame_bridge.mark_ai_interrupted()
+                    current_session.clear_playback()
+                    current_playback_id = current_session.current_playback_id
+                    if current_assistant_speech_handle:
+                        current_assistant_speech_handle.cancel()
+                    current_assistant_speech_handle = None
+                    log("PLAYBACK", event_type, payload={"playback_id": playback_id})
 
             elif event_type == "ChannelHangupRequest":
                 channel_id = event.get("channel", {}).get("id")
@@ -1538,6 +1934,7 @@ threads = [
     threading.Thread(target=control_server, daemon=True),
     threading.Thread(target=rtp_listener, daemon=True),
     threading.Thread(target=modulate_worker, daemon=True),
+    threading.Thread(target=turn_gate_worker, daemon=True),
     threading.Thread(target=groq_worker, daemon=True),
     threading.Thread(target=tts_worker, daemon=True),
 ]

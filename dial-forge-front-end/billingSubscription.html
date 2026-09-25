@@ -1622,7 +1622,12 @@
     );
     bindModalClose();
     panel.querySelectorAll('[data-choose-plan]').forEach((btn) => {
-      btn.addEventListener('click', () => openUpgradeCheckoutModal(btn.dataset.choosePlan));
+      btn.addEventListener('click', () => {
+        // Mark this plan as selected
+        panel.querySelectorAll('[data-choose-plan]').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        openUpgradeCheckoutModal(btn.dataset.choosePlan);
+      });
     });
   }
 
@@ -1853,7 +1858,139 @@
     }
   });
 
-  /* ---------------- Live usage ticking (matches "Live Updates" badge) ---------------- */
+    /* ---------------- Billing API Integration: Load API Tier Status ---------------- */
+  async function loadApiTierStatus() {
+    if (typeof billingAPI === 'undefined') {
+      console.warn('[Billing Page] billingAPI not available');
+      return;
+    }
+
+    try {
+      // Fetch API status
+      const status = await billingAPI.getApiStatus();
+
+      if (!status || !status.configured) {
+        console.warn('[Billing Page] No API status available');
+        return;
+      }
+
+      // Get vendor statuses
+      const vendors = ['HubSpot', 'Zendesk', 'Apollo', 'Zapier'];
+      const featureGrid = document.getElementById('api-features-grid');
+
+      if (!featureGrid) {
+        console.warn('[Billing Page] api-features-grid not found');
+        return;
+      }
+
+      // Clear loading state
+      featureGrid.innerHTML = '';
+
+      // Render each vendor's status
+      vendors.forEach(vendor => {
+        const vendorStatus = billingAPI.getVendorFeatureStatus(vendor, status);
+        const badgeStyle = billingAPI.getStatusBadgeStyle(vendorStatus.status);
+
+        const card = document.createElement('div');
+        card.className = 'glass-card rounded-2xl p-6 flex flex-col items-start';
+        card.innerHTML = `
+          <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-base ${badgeStyle.color}">${badgeStyle.icon}</span>
+            <span class="text-sm font-bold text-white">${vendor}</span>
+          </div>
+          <span class="text-[11px] text-on-surface-variant ${badgeStyle.color}">${vendorStatus.message}</span>
+          ${vendorStatus.mode !== 'none' && vendorStatus.mode !== 'unknown' ? 
+            `<span class="text-[10px] text-on-surface-variant/50 mt-2">${vendorStatus.mode === 'live' ? '(Connected)' : '(Demo Mode)'}</span>` 
+            : ''}
+        `;
+
+        featureGrid.appendChild(card);
+      });
+
+      console.log('[Billing Page] API tier status loaded');
+    } catch (error) {
+      console.error('[Billing Page] Error loading API tier status:', error);
+    }
+  }
+
+  /* ---------------- Billing API Integration: Upgrade Request Handler ---------------- */
+  async function handleUpgradeRequest(newPlan) {
+    if (typeof billingAPI === 'undefined') {
+      toast('API not available', 'error');
+      return;
+    }
+
+    try {
+      const upgradeBtn = document.getElementById('confirm-upgrade-btn');
+      if (upgradeBtn) {
+        upgradeBtn.disabled = true;
+        upgradeBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">hourglass_empty</span> Sending Request...';
+      }
+
+      const currentPlan = state.plan || 'starter';
+      const upgradeRequest = {
+        feature: 'Plan Upgrade',
+        currentTier: currentPlan,
+        requestedTier: newPlan,
+        reason: `User requested upgrade from ${PLANS[currentPlan]?.name || currentPlan} to ${PLANS[newPlan]?.name || newPlan}`,
+        timestamp: new Date().toISOString()
+      };
+
+      const result = await billingAPI.requestUpgrade(upgradeRequest);
+
+      if (result.success) {
+        toast(result.message, 'success');
+        
+        // Keep modal open but show success state
+        setTimeout(() => {
+          if (upgradeBtn) {
+            upgradeBtn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> Request Sent';
+            upgradeBtn.classList.add('bg-tertiary/20', 'border-tertiary/30');
+          }
+        }, 300);
+      } else {
+        toast(result.message, 'error');
+        if (upgradeBtn) {
+          upgradeBtn.disabled = false;
+          upgradeBtn.innerHTML = '<span class="material-symbols-outlined">send</span> Send Request';
+        }
+      }
+    } catch (error) {
+      console.error('[Billing Page] Error handling upgrade request:', error);
+      toast(`Error: ${error.message}`, 'error');
+      
+      const upgradeBtn = document.getElementById('confirm-upgrade-btn');
+      if (upgradeBtn) {
+        upgradeBtn.disabled = false;
+        upgradeBtn.innerHTML = '<span class="material-symbols-outlined">send</span> Send Request';
+      }
+    }
+  }
+
+  /* Patch confirm upgrade button to use Billing API */
+  const originalConfirmUpgrade = function() {
+    const selectedPlan = document.querySelector('[data-choose-plan].selected')?.dataset.choosePlan;
+    if (selectedPlan) {
+      handleUpgradeRequest(selectedPlan);
+    }
+  };
+
+  /* Override the confirm upgrade handler */
+  const originalHandler = document.getElementById('confirm-upgrade-btn')?.onclick;
+  document.addEventListener('click', function(e) {
+    if (e.target.id === 'confirm-upgrade-btn' || e.target.closest('#confirm-upgrade-btn')) {
+      // Get the currently selected plan
+      const selectedPlanCard = document.querySelector('[data-choose-plan].selected');
+      if (selectedPlanCard) {
+        const planId = selectedPlanCard.dataset.choosePlan;
+        if (planId && typeof handleUpgradeRequest === 'function') {
+          handleUpgradeRequest(planId);
+        }
+      }
+    }
+  });
+
+  /* Live usage ticking (matches "Live Updates" badge) */
   setInterval(() => {
     if (state.subscriptionCancelled) return;
     if (state.minutesUsed < state.minutesTotal) {
@@ -1868,9 +2005,16 @@
   /* ---------------- Init ---------------- */
   renderPlan();
   renderUsage();
+    
+  // Load API tier and feature status from backend
+  loadApiTierStatus();
 })();
 </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/billingAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

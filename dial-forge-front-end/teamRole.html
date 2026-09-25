@@ -457,11 +457,11 @@
     <span class="material-symbols-outlined">call</span>
     <span class="text-[8px] uppercase font-bold">Call</span>
   </a>
-  <a href="./supportQueue_x" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
+  <a href="./supportQueue.html" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
     <span class="material-symbols-outlined">queue</span>
     <span class="text-[8px] uppercase font-bold">Queue</span>
   </a>
-  <a href="./callHistory" class="block w-full">
+  <a href="./callCoaching.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">graphic_eq</span>
       <span class="text-[8px] uppercase font-bold">Coaching</span>
@@ -1366,6 +1366,145 @@
           showToast('Settings saved successfully.', 'success');
         }, 900);
       }
+      
+      /* ============================================================
+         TEAM & ROLE API INTEGRATION
+      ============================================================ */
+
+      /**
+       * Load and display team roster
+       */
+      async function loadTeamRoster() {
+        if (typeof teamRoleAPI === 'undefined') {
+          console.warn('[Team Role] teamRoleAPI not available');
+          return;
+        }
+
+        try {
+          const tableBody = document.getElementById('teamRosterTableBody');
+          if (!tableBody) return;
+
+          // Fetch user details
+          const users = await teamRoleAPI.getUserDetails();
+
+          if (!Array.isArray(users) || users.length === 0) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="5" class="px-4 py-8 text-center text-on-surface-variant/60">
+                  No team members available
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          // Render team roster rows
+          const rowsHtml = users
+            .map(user => {
+              const formatted = teamRoleAPI.formatUserForDisplay(user);
+              if (!formatted) return '';
+
+              return `
+                <tr class="border-b border-white/5 hover:bg-white/2 transition-colors">
+                  <td class="px-4 py-3 text-white">${formatted.name}</td>
+                  <td class="px-4 py-3 text-on-surface-variant">${formatted.email}</td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block text-[10px] font-bold px-2 py-1 rounded-full bg-fire-gradient/10 text-fire-accent">${formatted.role}</span>
+                  </td>
+                  <td class="px-4 py-3 text-on-surface-variant">${formatted.team || '-'}</td>
+                  <td class="px-4 py-3 text-on-surface-variant">${formatted.jobTitle}</td>
+                </tr>
+              `;
+            })
+            .join('');
+
+          tableBody.innerHTML = rowsHtml;
+
+          console.log('[Team Role] Team roster loaded:', users.length, 'members');
+        } catch (error) {
+          console.error('[Team Role] Error loading team roster:', error);
+          const tableBody = document.getElementById('teamRosterTableBody');
+          if (tableBody) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="5" class="px-4 py-8 text-center text-error-red/60">
+                  Error loading team roster
+                </td>
+              </tr>
+            `;
+          }
+        }
+      }
+
+      /**
+       * Load and display owner directory
+       */
+      async function loadOwnerDirectory() {
+        if (typeof teamRoleAPI === 'undefined') {
+          console.warn('[Team Role] teamRoleAPI not available');
+          return;
+        }
+
+        try {
+          const tableBody = document.getElementById('ownerDirectoryTableBody');
+          if (!tableBody) return;
+
+          // Fetch owners
+          const owners = await teamRoleAPI.searchOwners();
+
+          if (!Array.isArray(owners) || owners.length === 0) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="4" class="px-4 py-8 text-center text-on-surface-variant/60">
+                  No owner mappings available
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          // Render owner directory rows
+          const rowsHtml = owners
+            .map(owner => {
+              const formatted = teamRoleAPI.formatOwnerForDisplay(owner);
+              if (!formatted) return '';
+
+              const isMapped = teamRoleAPI.isOwnerMapped(formatted);
+
+              return `
+                <tr class="border-b border-white/5 hover:bg-white/2 transition-colors">
+                  <td class="px-4 py-3 text-white">${formatted.name}</td>
+                  <td class="px-4 py-3 font-mono-data text-sm text-on-surface-variant">${formatted.ownerId}</td>
+                  <td class="px-4 py-3 font-mono-data text-sm text-on-surface-variant">${formatted.hubspotOwnerId}</td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block text-[10px] font-bold px-2 py-1 rounded-full ${
+                      isMapped
+                        ? 'bg-tertiary/10 text-tertiary'
+                        : 'bg-error-red/10 text-error-red'
+                    }">${isMapped ? 'Mapped' : 'Not Mapped'}</span>
+                  </td>
+                </tr>
+              `;
+            })
+            .join('');
+
+          tableBody.innerHTML = rowsHtml;
+
+          console.log('[Team Role] Owner directory loaded:', owners.length, 'owners');
+        } catch (error) {
+          console.error('[Team Role] Error loading owner directory:', error);
+          const tableBody = document.getElementById('ownerDirectoryTableBody');
+          if (tableBody) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="4" class="px-4 py-8 text-center text-error-red/60">
+                  Error loading owner directory
+                </td>
+              </tr>
+            `;
+          }
+        }
+      }
 
       /* ============================================================
          REVERT
@@ -1386,6 +1525,10 @@
       captureInitialState();
       initToggles();
       initDropdowns();
+      
+      // Load team roster and owner directory from backend
+      loadTeamRoster();
+      loadOwnerDirectory();
 
       const saveBtn = document.getElementById('save-changes-btn');
       if (saveBtn) saveBtn.addEventListener('click', saveSettings);
@@ -1398,6 +1541,10 @@
     })();
   </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/teamRoleAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

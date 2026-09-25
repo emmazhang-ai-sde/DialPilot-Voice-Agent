@@ -1,29 +1,12 @@
 /**
  * DialForge Active Call API Integration Layer
  * 
- * This file provides Active Call-specific API functionality.
- * It uses the universal API infrastructure from dialforgeApi.js and adds
- * Active Call-specific logic such as:
- * - HubSpot contact search when call connects
- * - Contact enrichment for CRM panel display
- * - Saving/syncing contact and CRM notes to HubSpot
- * - Support ticket creation (future integration point)
+ * Active Call-specific API functionality.
+ * CRM operations (HubSpot, Zendesk) delegated to centralized crmAPI.js
  * 
  * Dependencies:
  * - dialforgeApi.js (universal API infrastructure)
- * 
- * Responsibilities:
- * - Wrap universal API calls for Active Call use cases
- * - Search for HubSpot contact information when call connects
- * - Prepare contact data for CRM panel display
- * - Handle contact save/update operations
- * - Handle CRM notes synchronization
- * - Support ticket creation
- * 
- * NOT Responsible for:
- * - DOM manipulation or UI updates (Active Call HTML handles this)
- * - General API infrastructure (dialforgeApi.js handles this)
- * - Transcript or call recording logic
+ * - crmAPI.js (centralized CRM operations)
  */
 
 // ============================================================================
@@ -164,24 +147,7 @@ async function syncCallTranscript(transcriptRequest) {
 
 /**
  * Search for a contact in HubSpot using call participant information
- * 
- * Endpoint: POST /api/hubspot/contacts/search
- * 
- * Purpose: When a call connects, automatically search HubSpot for the caller
- * to enrich the CRM panel with contact information.
- * 
- * Search Priority:
- * 1. Phone number (primary)
- * 2. Email address (secondary)
- * 
- * Returns: Contact object from HubSpot or null if not found
- * 
- * @param {Object} contact - Contact from Active Call
- * @param {string} contact.name - Contact name
- * @param {string} contact.number - Phone number (preferred search field)
- * @param {string} contact.email - Email address (fallback search field)
- * @param {string} contact.company - Company name
- * @returns {Promise<Object|null>} - HubSpot contact object or null
+ * DELEGATED to crmAPI.js - using centralized function
  */
 async function searchHubSpotContactForCall(contact) {
   if (!contact) {
@@ -189,42 +155,25 @@ async function searchHubSpotContactForCall(contact) {
     return null;
   }
 
-  // Determine search fields: prefer phone, fallback to email
-  const phone = contact.number || '';
-  const email = contact.email || '';
-
-  if (!phone && !email) {
-    console.warn('[Active Call API] Contact has no phone or email for HubSpot search');
-    return null;
-  }
-
   try {
-    // Build search request body with available fields
-    const searchBody = {};
-    if (phone) searchBody.phone = phone;
-    if (email) searchBody.email = email;
-
-    // Make the API request
-    const response = await dialforgeApi.fetch('/api/hubspot/contacts/search', {
-      method: 'POST',
-      body: searchBody,
-      fallbackValue: null
-    });
-
-    // Extract contact from response (handle multiple possible formats)
-    if (response) {
-      // Response might be { contact: {...} } or { result: {...} } or {...}
-      const hubspotContact = response.contact || response.result || response;
-      
-      if (hubspotContact && typeof hubspotContact === 'object' && hubspotContact.id) {
-        // Valid contact found
-        console.log('[Active Call API] HubSpot contact found:', hubspotContact);
-        return hubspotContact;
-      }
+    // Use centralized crmAPI function
+    if (typeof crmAPI === 'undefined') {
+      console.warn('[Active Call API] crmAPI not available');
+      return null;
     }
 
-    // No contact found or invalid response
-    console.warn('[Active Call API] No HubSpot contact found for:', { phone, email });
+    const hubspotContact = await crmAPI.findHubSpotContact({
+      name: contact.name,
+      phone: contact.number,
+      email: contact.email
+    });
+
+    if (hubspotContact) {
+      console.log('[Active Call API] Found HubSpot contact:', hubspotContact);
+      return hubspotContact;
+    }
+
+    console.log('[Active Call API] No matching HubSpot contact found');
     return null;
   } catch (error) {
     console.error('[Active Call API] Error searching HubSpot:', error);
@@ -426,6 +375,10 @@ async function saveContactToHubSpot(contact) {
  * @param {Object} data.contact - Full contact object
  * @returns {Promise<Object>} - Result from HubSpot
  */
+/**
+ * Save CRM notes to HubSpot contact
+ * DELEGATED to crmAPI.js - using centralized function
+ */
 async function saveCrmNotesToHubSpot(data) {
   if (!data) {
     console.warn('[Active Call API] No CRM notes data provided');
@@ -433,42 +386,31 @@ async function saveCrmNotesToHubSpot(data) {
   }
 
   try {
-    // Build request body combining contact and notes
-    const requestBody = {
-      id: data.hubspotId || data.contact?.hubspotId,
-      notes: data.notes || '',
-      noteType: data.noteType || 'general',
-      // Include contact details for context
-      name: data.contact?.name,
+    // Use centralized crmAPI function
+    if (typeof crmAPI === 'undefined') {
+      console.warn('[Active Call API] crmAPI not available');
+      return null;
+    }
+
+    const result = await crmAPI.updateHubSpotContact({
+      vendorId: data.hubspotId || data.contact?.hubspotId,
       email: data.contact?.email,
       phone: data.contact?.number,
-      company: data.contact?.company,
-      jobTitle: data.contact?.jobTitle
-    };
-
-    // Remove undefined fields
-    Object.keys(requestBody).forEach(key => {
-      if (requestBody[key] === undefined || requestBody[key] === '') {
-        delete requestBody[key];
-      }
+      notes: data.notes || '',
+      disposition: data.disposition,
+      lifecycleStage: data.lifecycleStage,
+      lastCallDate: new Date().toISOString()
     });
 
-    // Make the API request
-    const response = await dialforgeApi.fetch('/api/hubspot/contacts', {
-      method: 'POST',
-      body: requestBody,
-      fallbackValue: null
-    });
-
-    if (response) {
-      console.log('[Active Call API] CRM notes saved to HubSpot:', response);
-      return response;
+    if (result) {
+      console.log('[Active Call API] CRM notes synced to HubSpot:', result);
+      return result;
     } else {
-      console.warn('[Active Call API] No response from HubSpot notes save');
+      console.warn('[Active Call API] No response from HubSpot sync');
       return null;
     }
   } catch (error) {
-    console.error('[Active Call API] Error saving CRM notes to HubSpot:', error);
+    console.error('[Active Call API] Error syncing CRM notes to HubSpot:', error);
     return null;
   }
 }

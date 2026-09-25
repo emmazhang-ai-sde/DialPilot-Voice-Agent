@@ -458,11 +458,11 @@
     <span class="material-symbols-outlined">call</span>
     <span class="text-[8px] uppercase font-bold">Call</span>
   </a>
-  <a href="./supportQueue_x" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
+  <a href="./supportQueue.html" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
     <span class="material-symbols-outlined">queue</span>
     <span class="text-[8px] uppercase font-bold">Queue</span>
   </a>
-  <a href="./callHistory" class="block w-full">
+  <a href="./callCoaching.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">graphic_eq</span>
       <span class="text-[8px] uppercase font-bold">Coaching</span>
@@ -1398,6 +1398,11 @@
     })();
   </script>
   
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/notificationsSettingsAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
+
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">
 // DialPad Module
@@ -1605,6 +1610,194 @@
   window.DialPad = DialPad;
 </script>
 <!-- END: DialPad Module -->
+
+<!-- BEGIN: Notifications Settings API Integration -->
+<script>
+  /* ============================================================
+     NOTIFICATIONS SETTINGS API INTEGRATION
+  ============================================================ */
+
+  /**
+   * Load notification preferences from localStorage
+   */
+  function loadNotificationPreferences() {
+    if (typeof notificationsSettingsAPI === 'undefined') {
+      console.warn('[Notifications] notificationsSettingsAPI not available');
+      return;
+    }
+
+    try {
+      const preferences = notificationsSettingsAPI.getNotificationPreferences();
+
+      // Load toggles
+      const dealAlertsToggle = document.getElementById('dealAlerts');
+      const missedCallToggle = document.getElementById('missedCallAlerts');
+      const weeklySummaryToggle = document.getElementById('weeklySummary');
+      const dailyDigestToggle = document.getElementById('dailyDigest');
+
+      if (dealAlertsToggle) dealAlertsToggle.checked = preferences.dealAlerts === true;
+      if (missedCallToggle) missedCallToggle.checked = preferences.missedCallAlerts === true;
+      if (weeklySummaryToggle) weeklySummaryToggle.checked = preferences.weeklySummary === true;
+      if (dailyDigestToggle) dailyDigestToggle.checked = preferences.dailyDigest === true;
+
+      // Load selects
+      const preferredChannelSelect = document.getElementById('preferredChannel');
+      const quietHoursSelect = document.getElementById('quietHours');
+
+      if (preferredChannelSelect) preferredChannelSelect.value = preferences.preferredChannel;
+      if (quietHoursSelect) quietHoursSelect.value = preferences.quietHours;
+
+      // Load webhook URL
+      const webhookUrlInput = document.getElementById('webhookUrl');
+      if (webhookUrlInput) {
+        const webhookUrl = notificationsSettingsAPI.getExternalWebhookUrl();
+        if (webhookUrl) webhookUrlInput.value = webhookUrl;
+      }
+
+      console.log('[Notifications] Preferences loaded');
+    } catch (error) {
+      console.error('[Notifications] Error loading preferences:', error);
+    }
+  }
+
+  /**
+   * Save notification preferences
+   */
+  function saveNotificationPreferences() {
+    if (typeof notificationsSettingsAPI === 'undefined') {
+      console.warn('[Notifications] notificationsSettingsAPI not available');
+      return;
+    }
+
+    try {
+      const preferences = {
+        dealAlerts: document.getElementById('dealAlerts')?.checked === true,
+        missedCallAlerts: document.getElementById('missedCallAlerts')?.checked === true,
+        weeklySummary: document.getElementById('weeklySummary')?.checked === true,
+        dailyDigest: document.getElementById('dailyDigest')?.checked === true,
+        preferredChannel: document.getElementById('preferredChannel')?.value || 'push',
+        quietHours: document.getElementById('quietHours')?.value || 'off',
+        soundAlerts: true,
+        toastDuration: 5,
+        missedCallPopups: true
+      };
+
+      const result = notificationsSettingsAPI.saveNotificationPreferences(preferences);
+
+      // Save webhook URL if provided
+      const webhookUrlInput = document.getElementById('webhookUrl');
+      if (webhookUrlInput) {
+        notificationsSettingsAPI.saveExternalWebhookUrl(webhookUrlInput.value);
+      }
+
+      console.log('[Notifications] Preferences saved');
+      return result;
+    } catch (error) {
+      console.error('[Notifications] Error saving preferences:', error);
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * Send test notification to webhook
+   */
+  async function sendTestNotification() {
+    if (typeof notificationsSettingsAPI === 'undefined') {
+      showToast('API not available', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('testNotificationBtn');
+    const icon = document.getElementById('testNotifIcon');
+    const label = document.getElementById('testNotifLabel');
+
+    if (!btn || btn.disabled) return;
+
+    const webhookUrlInput = document.getElementById('webhookUrl');
+    if (!webhookUrlInput || !webhookUrlInput.value.trim()) {
+      showToast('Please enter a webhook URL', 'error');
+      return;
+    }
+
+    const originalIcon = icon?.textContent || 'send';
+    const originalLabel = label?.textContent || 'Test Notification';
+
+    try {
+      btn.disabled = true;
+      if (icon) {
+        icon.textContent = 'progress_activity';
+        icon.classList.add('toast-spin');
+      }
+      if (label) label.textContent = 'Sending...';
+
+      // Save webhook URL
+      notificationsSettingsAPI.saveExternalWebhookUrl(webhookUrlInput.value);
+
+      // Send test notification
+      const result = await notificationsSettingsAPI.sendTestNotification(webhookUrlInput.value);
+
+      if (result.success) {
+        showToast(result.message, 'success');
+      } else {
+        showToast(result.message, 'error');
+      }
+    } catch (error) {
+      console.error('[Notifications] Error sending test:', error);
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      if (icon) {
+        icon.textContent = originalIcon;
+        icon.classList.remove('toast-spin');
+      }
+      if (label) label.textContent = originalLabel;
+    }
+  }
+
+  /**
+   * Initialize notification settings
+   */
+  function initNotificationSettings() {
+    // Load preferences on page load
+    loadNotificationPreferences();
+
+    // Set up test button
+    const testBtn = document.getElementById('testNotificationBtn');
+    if (testBtn) {
+      testBtn.addEventListener('click', sendTestNotification);
+    }
+
+    // Auto-save when preferences change
+    const toggles = ['dealAlerts', 'missedCallAlerts', 'weeklySummary', 'dailyDigest'];
+    toggles.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', () => saveNotificationPreferences());
+      }
+    });
+
+    const selects = ['preferredChannel', 'quietHours'];
+    selects.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', () => saveNotificationPreferences());
+      }
+    });
+
+    console.log('[Notifications] Settings initialized');
+  }
+
+  /**
+   * Initialize on DOM ready
+   */
+  document.addEventListener('DOMContentLoaded', () => {
+    initNotificationSettings();
+  });
+</script>
+<!-- END: Notifications Settings API Integration -->
 
 
 <!-- BEGIN: Usage Minutes Synchronization -->

@@ -1,25 +1,12 @@
 /**
  * DialForge Power Dialer API Integration Layer
  * 
- * This file provides Power Dialer-specific API functionality.
- * It uses the universal API infrastructure from dialforgeApi.js and adds
- * Power Dialer-specific logic such as:
- * - HubSpot contact search during call connection
- * - Contact data enrichment for the Active Call workflow
+ * Power Dialer-specific API functionality.
+ * CRM operations (HubSpot) delegated to centralized crmAPI.js
  * 
  * Dependencies:
  * - dialforgeApi.js (universal API infrastructure)
- * 
- * Responsibilities:
- * - Wrap universal API calls for Power Dialer use cases
- * - Search for HubSpot contact information during call connection
- * - Prepare contact data for Active Call transition
- * - Handle fallback when HubSpot is unavailable
- * 
- * NOT Responsible for:
- * - DOM manipulation or UI updates (Power Dialer.html handles this)
- * - General API infrastructure (dialforgeApi.js handles this)
- * - Active Call implementation
+ * - crmAPI.js (centralized CRM operations)
  */
 
 // ============================================================================
@@ -120,24 +107,7 @@ async function loadCallQueueEvents(queueId) {
 
 /**
  * Search for a contact in HubSpot by phone number or email
- * 
- * Endpoint: POST /api/hubspot/contacts/search
- * 
- * Purpose: When a prospect is connected to in Power Dialer, search HubSpot
- * for matching contact information to enrich the Active Call workflow.
- * 
- * Search Priority:
- * 1. Phone number (primary)
- * 2. Email address (secondary)
- * 
- * Returns: Contact object from HubSpot or null if not found
- * 
- * @param {Object} prospect - Prospect from Power Dialer queue
- * @param {string} prospect.name - Prospect name
- * @param {string} prospect.phone - Phone number (preferred search field)
- * @param {string} prospect.email - Email address (fallback search field)
- * @param {string} prospect.company - Company name
- * @returns {Promise<Object|null>} - HubSpot contact object or null
+ * DELEGATED to crmAPI.js - using centralized function
  */
 async function searchHubSpotContact(prospect) {
   if (!prospect) {
@@ -145,42 +115,25 @@ async function searchHubSpotContact(prospect) {
     return null;
   }
 
-  // Determine search field: prefer phone, fallback to email
-  const phone = prospect.phone || '';
-  const email = prospect.email || '';
-
-  if (!phone && !email) {
-    console.warn('[Power Dialer API] Prospect has no phone or email for HubSpot search');
-    return null;
-  }
-
   try {
-    // Build search request body with available fields
-    const searchBody = {};
-    if (phone) searchBody.phone = phone;
-    if (email) searchBody.email = email;
-
-    // Make the API request
-    const response = await dialforgeApi.fetch('/api/hubspot/contacts/search', {
-      method: 'POST',
-      body: searchBody,
-      fallbackValue: null
-    });
-
-    // Extract contact from response (handle multiple possible formats)
-    if (response) {
-      // Response might be { contact: {...} } or { result: {...} } or {...}
-      const contact = response.contact || response.result || response;
-      
-      if (contact && typeof contact === 'object' && contact.id) {
-        // Valid contact found
-        console.log('[Power Dialer API] HubSpot contact found:', contact);
-        return contact;
-      }
+    // Use centralized crmAPI function
+    if (typeof crmAPI === 'undefined') {
+      console.warn('[Power Dialer API] crmAPI not available');
+      return null;
     }
 
-    // No contact found or invalid response
-    console.warn('[Power Dialer API] No HubSpot contact found for:', { phone, email });
+    const contact = await crmAPI.findHubSpotContact({
+      name: prospect.name,
+      phone: prospect.phone,
+      email: prospect.email
+    });
+
+    if (contact) {
+      console.log('[Power Dialer API] HubSpot contact found:', contact);
+      return contact;
+    }
+
+    console.log('[Power Dialer API] No HubSpot contact found');
     return null;
   } catch (error) {
     console.error('[Power Dialer API] Error searching HubSpot:', error);

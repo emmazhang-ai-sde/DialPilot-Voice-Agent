@@ -1,27 +1,12 @@
 /**
  * DialForge Dashboard API Integration Layer
  * 
- * This file provides Dashboard-specific API functionality.
- * It uses the universal API infrastructure from dialforgeApi.js and adds
- * Dashboard-specific logic such as:
- * - Fetching Dashboard-specific data
- * - Dashboard-specific error handling
- * - Dashboard-specific data transformations
- * - Dashboard-specific localStorage keys
+ * Dashboard-specific API functionality.
+ * CRM operations (HubSpot, Zendesk) delegated to centralized crmAPI.js
  * 
  * Dependencies:
  * - dialforgeApi.js (universal API infrastructure)
- * 
- * Responsibilities:
- * - Wrap universal API calls for Dashboard use cases
- * - Dashboard-specific data transformations
- * - Dashboard-specific fallback handling
- * - Dashboard-specific caching strategy
- * 
- * NOT Responsible for:
- * - DOM manipulation or UI updates (Dashboard.html handles this)
- * - General API infrastructure (dialforgeApi.js handles this)
- * - Data transformation for other DialForge pages
+ * - crmAPI.js (centralized CRM operations)
  */
 
 // ============================================================================
@@ -42,15 +27,6 @@ const DASHBOARD_CACHE_KEYS = {
  * Fetch API/system status
  * 
  * Endpoint: GET /api/status
- * 
- * Purpose: Determine whether the backend API is available and functioning.
- * Used by the Dashboard to display system health indicator.
- * 
- * Returns:
- * - { status: 'available' } if backend is up
- * - { status: 'unavailable' } if backend is down (fallback value)
- * 
- * @returns {Promise<Object>} - Status object with 'status' property
  */
 async function fetchDashboardStatus() {
   const response = await dialforgeApi.fetch('/api/status', {
@@ -62,82 +38,59 @@ async function fetchDashboardStatus() {
 }
 
 // ============================================================================
-// HUBSPOT CONTACTS
+// HUBSPOT CONTACTS (delegated to crmAPI)
 // ============================================================================
 
 /**
  * Fetch HubSpot contacts from backend
- * 
- * Endpoint: GET /api/hubspot/contacts
- * 
- * Purpose: Retrieve contact information from HubSpot integration.
- * Used by Dashboard to display:
- * - Total contact count
- * - Recent contacts
- * - Contact-related metrics
- * 
- * Response Format (handled generically by dialforgeApi):
- * - { "contacts": [...] } or
- * - { "results": [...] }
- * 
- * @returns {Promise<Array>} - Array of contact objects
+ * DELEGATED to crmAPI.js - using centralized function
  */
 async function fetchDashboardContacts() {
-  // Fetch from backend with fallback to localStorage
-  const response = await dialforgeApi.fetch('/api/hubspot/contacts', {
-    fallbackKey: DASHBOARD_CACHE_KEYS.CONTACTS,
-    fallbackValue: []
-  });
+  try {
+    if (typeof crmAPI === 'undefined') {
+      console.warn('[Dashboard API] crmAPI not available');
+      return [];
+    }
 
-  // Extract array from response (handles multiple response formats)
-  const contacts = dialforgeApi.extractArray(response, 'contacts', 'results');
+    const contacts = await crmAPI.getHubSpotContacts();
+    
+    if (Array.isArray(contacts) && contacts.length > 0) {
+      dialforgeApi.cacheData(DASHBOARD_CACHE_KEYS.CONTACTS, contacts);
+    }
 
-  // Cache the contacts for offline use
-  if (Array.isArray(contacts) && contacts.length > 0) {
-    dialforgeApi.cacheData(DASHBOARD_CACHE_KEYS.CONTACTS, contacts);
+    return contacts || [];
+  } catch (error) {
+    console.error('[Dashboard API] Error fetching contacts:', error);
+    return [];
   }
-
-  return contacts;
 }
 
 // ============================================================================
-// ZENDESK TICKETS
+// ZENDESK TICKETS (delegated to crmAPI)
 // ============================================================================
 
 /**
  * Fetch Zendesk support tickets from backend
- * 
- * Endpoint: GET /api/zendesk/tickets
- * 
- * Purpose: Retrieve support ticket information from Zendesk integration.
- * Used by Dashboard to display:
- * - Open ticket count
- * - Total ticket count
- * - Recent tickets
- * - Ticket-related metrics
- * 
- * Response Format (handled generically by dialforgeApi):
- * - { "tickets": [...] } or
- * - { "results": [...] }
- * 
- * @returns {Promise<Array>} - Array of ticket objects
+ * DELEGATED to crmAPI.js - using centralized function
  */
 async function fetchDashboardTickets() {
-  // Fetch from backend with fallback to localStorage
-  const response = await dialforgeApi.fetch('/api/zendesk/tickets', {
-    fallbackKey: DASHBOARD_CACHE_KEYS.TICKETS,
-    fallbackValue: []
-  });
+  try {
+    if (typeof crmAPI === 'undefined') {
+      console.warn('[Dashboard API] crmAPI not available');
+      return [];
+    }
 
-  // Extract array from response (handles multiple response formats)
-  const tickets = dialforgeApi.extractArray(response, 'tickets', 'results');
+    const tickets = await crmAPI.getZendeskTickets();
+    
+    if (Array.isArray(tickets) && tickets.length > 0) {
+      dialforgeApi.cacheData(DASHBOARD_CACHE_KEYS.TICKETS, tickets);
+    }
 
-  // Cache the tickets for offline use
-  if (Array.isArray(tickets) && tickets.length > 0) {
-    dialforgeApi.cacheData(DASHBOARD_CACHE_KEYS.TICKETS, tickets);
+    return tickets || [];
+  } catch (error) {
+    console.error('[Dashboard API] Error fetching tickets:', error);
+    return [];
   }
-
-  return tickets;
 }
 
 // ============================================================================

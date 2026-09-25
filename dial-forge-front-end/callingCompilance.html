@@ -457,11 +457,11 @@
     <span class="material-symbols-outlined">call</span>
     <span class="text-[8px] uppercase font-bold">Call</span>
   </a>
-  <a href="./supportQueue_x" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
+  <a href="./supportQueue.html" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
     <span class="material-symbols-outlined">queue</span>
     <span class="text-[8px] uppercase font-bold">Queue</span>
   </a>
-  <a href="./callHistory" class="block w-full">
+  <a href="./callCoaching.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">graphic_eq</span>
       <span class="text-[8px] uppercase font-bold">Coaching</span>
@@ -1325,11 +1325,95 @@
         };
         setTimeout(dismiss, AUTO_DISMISS_MS);
       }
+      
+      /* ============================================================
+         DNC MARKING
+      ============================================================ */
+      /**
+       * Mark a phone number as Do Not Call
+       */
+      async function markPhoneAsDNC(phone) {
+        if (typeof callingComplianceAPI === 'undefined') {
+          showToast('API not available', 'error');
+          return;
+        }
+
+        if (!phone) {
+          showToast('No phone number provided', 'error');
+          return;
+        }
+
+        try {
+          console.log('[Calling Compliance] Marking DNC:', phone);
+
+          // Call backend API to mark as DNC
+          const result = await callingComplianceAPI.markDNC(phone);
+
+          if (result.success) {
+            showToast(result.message, 'success');
+
+            // Send audit event
+            await callingComplianceAPI.sendComplianceAudit({
+              action: 'mark_dnc',
+              details: {
+                phone: phone,
+                timestamp: new Date().toISOString()
+              }
+            });
+          } else {
+            showToast(result.message, 'error');
+          }
+        } catch (error) {
+          console.error('[Calling Compliance] Error marking DNC:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        }
+      }
+
+      /**
+       * Load saved compliance settings from localStorage
+       */
+      function loadComplianceSettings() {
+        if (typeof callingComplianceAPI === 'undefined') {
+          console.warn('[Calling Compliance] callingComplianceAPI not available');
+          return;
+        }
+
+        try {
+          const settings = callingComplianceAPI.getComplianceSettings();
+
+          // Apply saved settings to form controls
+          const allowedStartInput = document.getElementById('allowedStartTime');
+          const allowedEndInput = document.getElementById('allowedEndTime');
+          const recordingDisclaimerToggle = document.getElementById('recordingDisclaimer');
+          const timezoneGuardsToggle = document.getElementById('timezoneGuards');
+          const dncSyncToggle = document.getElementById('dncSync');
+
+          if (allowedStartInput && settings.allowedHours?.start) {
+            allowedStartInput.value = settings.allowedHours.start;
+          }
+          if (allowedEndInput && settings.allowedHours?.end) {
+            allowedEndInput.value = settings.allowedHours.end;
+          }
+          if (recordingDisclaimerToggle) {
+            recordingDisclaimerToggle.checked = settings.recordingDisclaimer === true;
+          }
+          if (timezoneGuardsToggle) {
+            timezoneGuardsToggle.checked = settings.timezoneGuards === true;
+          }
+          if (dncSyncToggle) {
+            dncSyncToggle.checked = settings.dncSync === true;
+          }
+
+          console.log('[Calling Compliance] Settings loaded:', settings);
+        } catch (error) {
+          console.error('[Calling Compliance] Error loading settings:', error);
+        }
+      }
 
       /* ============================================================
          INITIAL STATE (captured on load, used by Revert)
       ============================================================ */
-      let initialState = { toggles: {}, selects: {} };
+      let initialState = { toggles: {}, selects: {}, inputs: {} };
 
       function captureInitialState() {
         document.querySelectorAll('.toggle-checkbox').forEach(t => {
@@ -1337,6 +1421,9 @@
         });
         document.querySelectorAll('select[data-label]').forEach(s => {
           initialState.selects[s.id] = s.value;
+        });
+        document.querySelectorAll('input[type="time"]').forEach(i => {
+          initialState.inputs[i.id] = i.value;
         });
       }
 
@@ -1378,7 +1465,12 @@
       /* ============================================================
          SAVE
       ============================================================ */
-      function saveSettings() {
+      async function saveSettings() {
+        if (typeof callingComplianceAPI === 'undefined') {
+          showToast('API not available', 'error');
+          return;
+        }
+
         const btn = document.getElementById('save-changes-btn');
         const icon = document.getElementById('save-btn-icon');
         const labelEl = document.getElementById('save-btn-label');
@@ -1387,14 +1479,56 @@
         const originalIcon = icon ? icon.textContent : 'check_circle';
         const originalLabel = labelEl ? labelEl.textContent : 'Save Changes';
 
-        btn.disabled = true;
-        if (icon) {
-          icon.textContent = 'progress_activity';
-          icon.classList.add('toast-spin');
-        }
-        if (labelEl) labelEl.textContent = 'Saving...';
+        try {
+          btn.disabled = true;
+          if (icon) {
+            icon.textContent = 'progress_activity';
+            icon.classList.add('toast-spin');
+          }
+          if (labelEl) labelEl.textContent = 'Saving...';
 
-        setTimeout(() => {
+        // Gather compliance settings from form
+          const allowedStartInput = document.getElementById('allowedStartTime');
+          const allowedEndInput = document.getElementById('allowedEndTime');
+          const recordingDisclaimerToggle = document.getElementById('recordingDisclaimer');
+
+          const settings = {
+            allowedHours: {
+              start: allowedStartInput?.value || '08:00',
+              end: allowedEndInput?.value || '21:00'
+            },
+            recordingDisclaimer: recordingDisclaimerToggle?.checked === true,
+            timezoneGuards: document.getElementById('timezoneGuards')?.checked === true,
+            dncSync: document.getElementById('dncSync')?.checked === true
+          };
+
+          console.log('[Calling Compliance] Saving settings:', settings);
+
+          // Save compliance settings to localStorage
+          const saveResult = callingComplianceAPI.saveComplianceSettings(settings);
+
+          if (saveResult.success) {
+            // Send audit event
+            await callingComplianceAPI.sendComplianceAudit({
+              action: 'update_compliance_settings',
+              details: {
+                allowedHours: settings.allowedHours,
+                recordingDisclaimer: settings.recordingDisclaimer,
+                timezoneGuards: settings.timezoneGuards,
+                dncSync: settings.dncSync
+              }
+            });
+
+            showToast('Compliance settings saved successfully.', 'success');
+            // Update initial state
+            captureInitialState();
+          } else {
+            showToast('Failed to save settings: ' + saveResult.message, 'error');
+          }
+        } catch (error) {
+          console.error('[Calling Compliance] Error saving settings:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        } finally {
           btn.disabled = false;
           if (icon) {
             icon.textContent = originalIcon;
@@ -1402,7 +1536,7 @@
           }
           if (labelEl) labelEl.textContent = originalLabel;
           showToast('Settings saved successfully.', 'success');
-        }, 900);
+        }
       }
 
       /* ============================================================
@@ -1415,12 +1549,18 @@
         document.querySelectorAll('select[data-label]').forEach(s => {
           if (s.id in initialState.selects) s.value = initialState.selects[s.id];
         });
+        document.querySelectorAll('input[type="time"]').forEach(i => {
+          if (i.id in initialState.inputs) i.value = initialState.inputs[i.id];
+        });
         showToast('Settings reverted to default values.', 'info');
       }
 
       /* ============================================================
          WIRE UP
       ============================================================ */
+      // Load saved compliance settings
+      loadComplianceSettings();
+      
       captureInitialState();
       initToggles();
       initDropdowns();
@@ -1436,6 +1576,10 @@
     })();
   </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/callingComplianceAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

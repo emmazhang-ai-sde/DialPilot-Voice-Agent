@@ -488,12 +488,12 @@ animation: fade-in 0.3s ease-out;
       
     }
 
-	    .control-btn-group {
-	      display: flex;
-	      align-items: center;
-	      gap: 0.5rem;
-	      flex-shrink: 0;
-	    }
+    .control-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
 
 	    .call-end-btn {
 	      min-width: 12rem;
@@ -927,7 +927,7 @@ animation: fade-in 0.3s ease-out;
   <a href="./notifications.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all" aria-label="Go to Notifications">
       <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
-      <span class="text-[8px] uppercase font-bold">Notif</span>
+      <span class="text-[8px] uppercase font-bold">Notifs</span>
     </button>
   </a>
 </nav>
@@ -946,11 +946,11 @@ animation: fade-in 0.3s ease-out;
 <div class="flex items-center justify-between mb-6">
 <h2 class="font-syne text-xs uppercase tracking-widest text-fire-accent font-bold">Live Transcript</h2>
 <span id="sipOwnerCenterBadge" class="bg-white/10 text-gray-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-tighter">No Active Call</span>
-	</div>
-	<!-- Transcript Container - Scrollable independently -->
-	<div class="transcript-container space-y-6 pr-2 mb-6" id="transcript-feed">
+</div>
+<!-- Transcript Container - Scrollable independently -->
+<div class="transcript-container space-y-6 pr-2 mb-6" id="transcript-feed">
 	<p class="text-xs text-gray-600">Database transcript will appear when final turns are persisted.</p>
-	</div>
+</div>
 <!-- AI Coach Bubble - Fixed position -->
 <div id="ai-coach-bubble" class="coach-bubble-fixed glass-card p-5 rounded-3xl border-fire-accent/30 fire-glow relative overflow-hidden group">
 <div class="absolute inset-0 bg-fire-gradient opacity-[0.02] group-hover:opacity-[0.05] transition-opacity"></div>
@@ -1073,9 +1073,9 @@ animation: fade-in 0.3s ease-out;
 </div>
 
 <div class="w-px h-8 bg-white/10 mx-2"></div>
-<button id="endCall" class="call-end-btn px-10 py-3.5 bg-error-red hover:bg-red-600 text-white rounded-full flex items-center justify-center gap-3 font-bold transition-all active:scale-95 shadow-[0_0_25px_rgba(255,59,48,0.4)]" aria-label="End current call">
+<button id="endCall" class="call-end-btn px-8 py-3.5 bg-error-red hover:bg-red-600 text-white rounded-full flex items-center gap-3 font-bold transition-all active:scale-95 shadow-[0_0_25px_rgba(255,59,48,0.4)]" aria-label="End current call">
 <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;" aria-hidden="true">call_end</span>
-<span class="whitespace-nowrap">End Call</span>
+<span class="">End Call</span>
 </button>
 
 </div>
@@ -1148,9 +1148,9 @@ animation: fade-in 0.3s ease-out;
 	<ul id="runtimeSummaryList" class="space-y-2 text-[11px] leading-snug text-gray-300"></ul>
 	</div>
 	</div>
-	
-	<!-- Contact Information -->
-	<div class="mb-8">
+
+<!-- Contact Information -->
+<div class="mb-8">
 <h3 class="text-[10px] font-bold uppercase text-gray-500 border-b border-white/5 pb-2 mb-4">Contact Information</h3>
 <div class="space-y-4">
 <div class="flex gap-3 items-start">
@@ -1265,10 +1265,6 @@ animation: fade-in 0.3s ease-out;
 </div>
 </div>
 <!-- Footer CTA -->
-<button class="mt-auto w-full py-4 glass-card rounded-2xl text-fire-accent font-bold text-sm border-white/10 hover:bg-fire-accent/10 transition-all flex items-center justify-center gap-2 group">
-<span class="material-symbols-outlined text-lg group-hover:scale-110 transition-transform">open_in_new</span>
-        Open Salesforce Record
-      </button>
 </section>
 <!-- END: RightPanel_CRM -->
 </main>
@@ -1752,6 +1748,8 @@ Apply Settings
 <!-- Load universal API infrastructure first -->
 <script src="./APIintegration/dialforgeAPI.js"></script>
 <script src="./APIintegration/currentUserAPI.js"></script>
+<!-- Load centralized CRM API layer -->
+<script src="./APIintegration/crmAPI.js"></script>
 <!-- Load Active Call-specific API layer -->
 <script src="./APIintegration/activeCallAPI.js"></script>
 <!-- END: API Integration Scripts -->
@@ -2818,7 +2816,7 @@ window.addEventListener('beforeunload', function() {
       company: '',
       jobTitle: '',
       location: '',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBqKguv2lN-Bz17QH9A5oJ04TkQSL4nMLIAKfF9xp4iOEpTKOiZEaEHl--uHjC9vHGXU6qmkQ8SAjrqYN2C5ZC0j0r3BIhBFSbt2mBmxkoGo8qxofHET6kJrC-YmSooHt2JdsXAUudIM2DjBPuGycorYtogSyZEIsTXmimMxi0zwngsa6Xw93Z3U8i9cgKZaiG6k08y-t5t8PWxjLRW4f0Waz8F9OhmRfq8HzPfeCgvHAb8TQZArckHVJ0rmXREH7UOib28r3OKIGk',
+      avatar: '',
       email: '',
       dealValue: '',
       pipelineStage: '',
@@ -2875,13 +2873,38 @@ window.addEventListener('beforeunload', function() {
     
     // Avatar logic: image if available, otherwise initials
     if (avatarEl) {
-      if (contact.avatar) {
-        avatarEl.src = contact.avatar || CALL.contact.avatar;
+      if (contact.avatar && contact.avatar.trim() !== '') {
+        // Clear previous error handlers
+        avatarEl.onerror = null;
+        avatarEl.onload = null;
+        // Reset src to prevent showing old image while new one loads
+        avatarEl.src = '';
+        
+        // Handle image load success
+        avatarEl.onload = () => {
         avatarEl.classList.remove('hidden');
         if (avatarInitials) avatarInitials.classList.add('hidden');
+      };
+         
+        // Handle image load failure - show initials instead
+        avatarEl.onerror = () => {
+          avatarEl.classList.add('hidden');
+          if (avatarInitials) {
+            const initials = getInitials(contact.name);
+            avatarInitials.textContent = initials;
+            avatarInitials.classList.remove('hidden');
+          }
+        };
+        
+        // Set the source to trigger load/error handlers
+        avatarEl.src = contact.avatar;
+        avatarEl.alt = contact.name || 'Contact';
       } else {
         // No avatar: show initials fallback
         avatarEl.classList.add('hidden');
+        avatarEl.src = '';
+        avatarEl.onerror = null;
+        avatarEl.onload = null;
         if (avatarInitials) {
           const initials = getInitials(contact.name);
           avatarInitials.textContent = initials;
@@ -2897,14 +2920,36 @@ window.addEventListener('beforeunload', function() {
     const crmAvatarInitials = document.getElementById('crmAvatarInitials');
 
     if (crmAvatarImage && crmAvatarInitials) {
-      if (contact.avatar) {
-        // Show real avatar image
-        crmAvatarImage.src = contact.avatar;
+      if (contact.avatar && contact.avatar.trim() !== '') {
+        // Clear previous error handlers
+        crmAvatarImage.onerror = null;
+        crmAvatarImage.onload = null;
+        // Reset src to prevent showing old image while new one loads
+        crmAvatarImage.src = '';
+        
+        // Handle image load success
+        crmAvatarImage.onload = () => {
         crmAvatarImage.classList.remove('hidden');
         crmAvatarInitials.classList.add('hidden');
+        };
+        
+        // Handle image load failure - show initials instead
+        crmAvatarImage.onerror = () => {
+          crmAvatarImage.classList.add('hidden');
+          const initials = getInitials(contact.name);
+          crmAvatarInitials.textContent = initials;
+          crmAvatarInitials.classList.remove('hidden');
+        };
+        
+        // Set the source to trigger load/error handlers
+        crmAvatarImage.src = contact.avatar;
+        crmAvatarImage.alt = contact.name || 'Contact';
       } else {
         // No avatar: show initials fallback
         crmAvatarImage.classList.add('hidden');
+        crmAvatarImage.src = '';
+        crmAvatarImage.onerror = null;
+        crmAvatarImage.onload = null;
         const initials = getInitials(contact.name);
         crmAvatarInitials.textContent = initials;
         crmAvatarInitials.classList.remove('hidden');
@@ -3176,24 +3221,57 @@ window.addEventListener('beforeunload', function() {
   }
 
   // ========== MAIN: START CALL WITH CONTACT ==========
- async function start(contact) {
-    // Update CALL state
+ async function start(contact) { 
+  // CRITICAL: Reset contact data to prevent carryover from previous calls
+    // Start with default empty contact, then merge in new data
+    CALL.contact = {
+      name: '',
+      number: '',
+      company: '',
+      jobTitle: '',
+      location: '',
+      avatar: '',
+      email: '',
+      dealValue: '',
+      pipelineStage: '',
+      recentCalls: CALL.contact.recentCalls || [
+        { name: 'Jordan Blake', time: '8m ago', outcome: 'Qualified' },
+        { name: 'Priya Anand', time: '24m ago', outcome: 'Follow-up' },
+        { name: 'Marcus Feld', time: '1h ago', outcome: 'Voicemail' },
+        { name: 'Alicia Gomez', time: '2h ago', outcome: 'Booked demo' },
+        { name: 'Noah Park', time: '3h ago', outcome: 'Closed' }
+      ],
+      topDeals: CALL.contact.topDeals || [
+        { name: 'Northwind Labs', value: '$142k', stage: 'Negotiation' },
+        { name: 'BrightPath AI', value: '$96k', stage: 'Proposal' },
+        { name: 'Redline Ops', value: '$84k', stage: 'Discovery' }
+      ],
+      recentTimeline: [],
+      leadScore: null
+    };
+    
+    // Update CALL state with incoming contact data
     if (typeof contact === 'string') {
       // Handle legacy string format (contact name)
       CALL.contact.name = contact;
-    } else if (typeof contact === 'object') {
+    } else if (typeof contact === 'object' && contact !== null) {
       // Handle object format with full contact info
+      // Only set fields that are actually provided, to avoid overwriting defaults
       CALL.contact = { ...CALL.contact, ...contact };
-      // Clear old avatar if new contact doesn't have one (prevent avatar carryover)
-      if (!contact.avatar) {
-        CALL.contact.avatar = '';
-      }
+    }
+        
+    // CRITICAL FIX: Reset dial pad state to ensure previous dial pad numbers do not persist
+    // When a call is started (whether from Call History or elsewhere), the dial pad internal
+    // state must be cleared to prevent stale dial pad numbers from overriding the current contact.
+    // This ensures the contact passed to start() is the authoritative source of truth.
+    if (typeof DialPad !== 'undefined' && DialPad.reset) {
+      DialPad.reset();
     }
     
     // Initialize call timer using existing helper function
     CALL.isActive = true;
     CALL.isOnHold = false;
-    CALL.duration = 0; // Reset duration to zero
+CALL.duration = 0; // Reset duration to zero
     startCallTimer(); // Start the timer — single source of truth
 
     // Update Large Avatar section
@@ -3361,11 +3439,22 @@ window.addEventListener('beforeunload', function() {
     const params = new URLSearchParams(window.location.search);
     const contactName = params.get('contact');
     const contactNumber = params.get('number');
+    const contactCompany = params.get('company');
+    const contactEmail = params.get('email');
+    const contactAvatar = params.get('avatar');
+    const contactJobTitle = params.get('jobTitle');
+    const contactLocation = params.get('location');
 
+    // Only initialize if at least a name or number is provided (indicates Call History handoff)
     if (contactName || contactNumber) {
       const contact = {
         name: contactName || '',
-        number: contactNumber || ''
+        number: contactNumber || '',
+        company: contactCompany || '',
+        email: contactEmail || '',
+        avatar: contactAvatar || '',
+        jobTitle: contactJobTitle || '',
+        location: contactLocation || ''
       };
       start(contact);
     }
@@ -3424,7 +3513,7 @@ window.addEventListener('beforeunload', function() {
           company: prospect.company || '',
           jobTitle: prospect.title || '',
           location: prospect.company || '',
-          avatar: prospect.avatar || CALL.contact.avatar,
+          avatar: prospect.avatar || '',
           email: prospect.email || '',
           dealValue: prospect.dealValue || '',
           pipelineStage: prospect.pipelineStage || '',
@@ -3462,9 +3551,9 @@ window.addEventListener('beforeunload', function() {
       }
     }
 
-	    // ========== END CALL COMPLETION WORKFLOW ==========
+    // ========== END CALL COMPLETION WORKFLOW ==========
 	    // The runtime-aware End Call handler is wired in the incoming-call-and-timer module.
-	  });
+  });
 </script>
 
 <script data-purpose="interface-interactivity">
@@ -3550,7 +3639,7 @@ if (transcriptFeed) {
       contact: null,          // { name, company, number, avatar }
       elapsedSeconds: 0,      // accumulated *active* talk time (hold time excluded)
       tickHandle: null,      // setInterval handle — guarded so we never duplicate it
-      direction: 'inbound',   // inbound | outbound
+    direction: 'inbound',   // inbound | outbound
       runtimeSessionId: null,
       runtimeStartedAtMs: null,
     // Single source of truth for starting a call with a contact
@@ -3592,9 +3681,9 @@ if (transcriptFeed) {
     const companyEl = document.getElementById('incomingCallCompany');
     const numberEl = document.getElementById('incomingCallNumber');
 
-	    const acceptBtn = document.getElementById('acceptCallBtn');
-	    const declineBtn = document.getElementById('declineCallBtn');
-	    const voicemailBtn = document.getElementById('voicemailCallBtn');
+    const acceptBtn = document.getElementById('acceptCallBtn');
+    const declineBtn = document.getElementById('declineCallBtn');
+    const voicemailBtn = document.getElementById('voicemailCallBtn');
 
 	    const holdBtn = document.getElementById('btn-hold');
     const endBtn = document.getElementById('endCall');
@@ -3792,10 +3881,8 @@ if (transcriptFeed) {
       }
       overlay?.classList.remove('hidden');
     }
-
     window.syncRuntimeCallSession = syncRuntimeCallSession;
     window.completeRuntimeCallFromExternalHangup = completeRuntimeCallFromExternalHangup;
-
 // =====================================================================
     // UPDATE UI FROM CALL.contact
     // =====================================================================
@@ -3819,27 +3906,53 @@ if (transcriptFeed) {
       contactLocation.textContent = CALL.contact.location || CALL.contact.company || '—';
             
       // Avatar logic: image if available, otherwise initials
-      if (CALL.contact.avatar) {
-        avatarImage.src = CALL.contact.avatar;
+      if (CALL.contact.avatar && CALL.contact.avatar.trim() !== '') {
+        // Clear previous error handlers and set up fresh ones
+        avatarImage.onerror = null;
+        avatarImage.onload = null;
+        
+        // Handle image load success
+        avatarImage.onload = () => {
         avatarImage.classList.remove('hidden');
         if (avatarInitials) avatarInitials.classList.add('hidden');
+                };
+        
+        // Handle image load failure - show initials instead
+        avatarImage.onerror = () => {
+          avatarImage.classList.add('hidden');
+          if (avatarInitials) {
+            const initials = getInitials(CALL.contact.name);
+            avatarInitials.textContent = initials;
+            avatarInitials.classList.remove('hidden');
+          }
+        };
+        
+        // Set the source to trigger load/error handlers
+        avatarImage.src = CALL.contact.avatar;
+        avatarImage.alt = CALL.contact.name || 'Contact';
       } else {
         // No avatar: show initials fallback
         avatarImage.classList.add('hidden');
+                avatarImage.onerror = null;
+        avatarImage.onload = null;
         if (avatarInitials) {
           const initials = getInitials(CALL.contact.name);
           avatarInitials.textContent = initials;
           avatarInitials.classList.remove('hidden');
         }
       }
-      
-      avatarImage.alt = CALL.contact.name || 'Contact';
 
+      // Update Active Call Bar
+      if (activeName) activeName.textContent = CALL.contact.name || 'Caller';
+      if (activeCompany) activeCompany.textContent = CALL.contact.company || 'Company';
     }
 
     // Listen for call starts and update UI automatically
     window.addEventListener('callStarted', (event) => {
       updateUIFromContact();
+      activeBar.classList.remove('hidden');
+      activeStatusLabel.textContent = 'Active Call';
+      holdBtn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span>Hold';
       renderTimer();
       ensureTicking();
     });
@@ -3931,9 +4044,9 @@ if (transcriptFeed) {
       historyBody.insertBefore(row, historyBody.firstChild);
     }
 
-	    function hideIncomingCall() {
-	      overlay.classList.add('hidden');
-	    }
+    function hideIncomingCall() {
+      overlay.classList.add('hidden');
+    }
 
     function acceptCall() {
       hideIncomingCall();
@@ -3996,8 +4109,12 @@ if (transcriptFeed) {
     function toggleHold() {
       if (CALL.status === 'active') {
         CALL.status = 'hold';
+        activeStatusLabel.textContent = 'On Hold';
+        holdBtn.innerHTML = '<span class="material-symbols-outlined text-sm">play_arrow</span>Resume';
       } else if (CALL.status === 'hold') {
         CALL.status = 'active';
+        activeStatusLabel.textContent = 'Active Call';
+        holdBtn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span>Hold';
       }
       renderTimer();
     }
@@ -4111,12 +4228,18 @@ if (transcriptFeed) {
       CALL.elapsedSeconds = 0;
       CALL.contact = contact;
 
+      activeName.textContent = contact.name;
+      activeCompany.textContent = contact.company;
+      activeStatusLabel.textContent = 'Active Call';
+      holdBtn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span>Hold';
+      activeBar.classList.remove('hidden');
+
       renderTimer();
       ensureTicking();
-	    }
+    }
 
-	    // ---- Wire up events -----------------------------------------------
-	    acceptBtn.addEventListener('click', acceptCall);
+    // ---- Wire up events -----------------------------------------------
+    acceptBtn.addEventListener('click', acceptCall);
     declineBtn.addEventListener('click', declineCall);
     voicemailBtn.addEventListener('click', sendToVoicemail);
     holdBtn.addEventListener('click', toggleHold);

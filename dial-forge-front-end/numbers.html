@@ -1,7 +1,7 @@
 <!DOCTYPE html><html class="dark" lang="en" style=""><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport">
-<title>DialForge - Performance Pulse</title>
+<title>DialForge - Numbers</title>
 <!-- Tailwind CSS v3 with plugins -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <!-- Fonts -->
@@ -251,7 +251,6 @@
 <body class="bg-background text-on-background font-body-base antialiased">
 <div class="noise-overlay"></div>
 
-  
 <!-- BEGIN: DialPad Modal -->
 <div id="dialPadOverlay" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
   <div class="modal-in glass-card fire-glow w-full max-w-sm rounded-2xl p-8 flex flex-col">
@@ -601,7 +600,6 @@
 </aside>
 <!-- END: LeftSidebar -->
   
-
   <!-- BEGIN: MainContent -->
 <!-- BEGIN: Right CRM Panel (ported from Dashboard) -->
 <aside id="crmPanel" class="crm-panel fixed top-16 right-0 z-[45] h-[calc(100vh-64px)] border-l border-white/10 bg-surface-container-low/95 backdrop-blur-xl shadow-2xl overflow-hidden">
@@ -1293,6 +1291,16 @@
       CALL.direction = 'outbound';
       CALL.elapsedSeconds = 0;
       CALL.caller = caller;
+      
+      // Integrate primary caller ID for outbound calls
+      if (typeof numbersAPI !== 'undefined') {
+        const primaryCallerId = numbersAPI.getPrimaryCallerId();
+        if (primaryCallerId) {
+          CALL.callerId = primaryCallerId.number;
+          CALL.callerIdName = primaryCallerId.name;
+          console.log('[Numbers Page] Outbound call using primary caller ID:', primaryCallerId.number);
+        }
+      }
 
       activeName.textContent = caller.name;
       activeCompany.textContent = caller.company;
@@ -1478,6 +1486,72 @@
   };
 
   const AGENTS = ['Unassigned', 'Alex Rivera', 'Priya Shah', 'Marcus Webb', 'Jordan Lee', 'Sofia Chen'];
+  
+  /**
+   * Synchronize numbers selected during onboarding with Active Numbers
+   * Reads from dialforgeOnboardingNumbers in localStorage
+   * Only adds unique numbers that aren't already in Active Numbers
+   */
+  function syncOnboardingNumbers() {
+    try {
+      const onboardingData = localStorage.getItem('dialforgeOnboardingNumbers');
+      if (!onboardingData) {
+        console.log('[Numbers Sync] No onboarding data found in localStorage');
+        return;
+      }
+
+      const onboardingNumbers = JSON.parse(onboardingData);
+      if (!onboardingNumbers.selected || !onboardingNumbers.selected.phone) {
+        console.log('[Numbers Sync] No valid selected number in onboarding data');
+        return;
+      }
+
+      const selectedPhone = onboardingNumbers.selected.phone;
+      const selectedLabel = onboardingNumbers.selected.label || `${onboardingNumbers.selected.country} Line`;
+
+      // Check if this phone number already exists in Active Numbers
+      // to prevent duplicates (normalize by removing spaces and parentheses for comparison)
+      const normalizePhone = (phone) => phone.replace(/[\s\-()]/g, '');
+      const normalizedNewPhone = normalizePhone(selectedPhone);
+
+      const existingCards = document.querySelectorAll('[data-asset-card]');
+      let isDuplicate = false;
+
+      existingCards.forEach(card => {
+        const existingPhone = card.dataset.assetNumber || '';
+        if (normalizePhone(existingPhone) === normalizedNewPhone) {
+          isDuplicate = true;
+          console.log('[Numbers Sync] Number already exists in Active Numbers:', selectedPhone);
+        }
+      });
+
+      if (!isDuplicate) {
+        // Add the number to Active Numbers using existing function
+        addActiveAsset(selectedLabel, selectedPhone);
+        
+        // Update monthly spend (assume $3.00/month for onboarded numbers)
+        state.monthlySpend += 3.00;
+        renderStats();
+
+        console.log('[Numbers Sync] Successfully added onboarding number:', selectedPhone);
+        
+        // Clear the onboarding data so it doesn't re-add on page refresh
+        // Store a flag instead to track it was processed
+        try {
+          const processed = {
+            ...onboardingNumbers,
+            processed: true,
+            processedTime: Date.now()
+          };
+          localStorage.setItem('dialforgeOnboardingNumbers', JSON.stringify(processed));
+        } catch (e) {
+          console.log('[Numbers Sync] Could not update processed flag:', e);
+        }
+      }
+    } catch (e) {
+      console.error('[Numbers Sync] Error syncing onboarding numbers:', e);
+    }
+  }
 
   /* ---------------- Toasts ---------------- */
   function toast(message, type) {
@@ -2058,11 +2132,212 @@
       }
     });
   });
+  
+  /* ---------------- Numbers API Integration: Primary Caller ID Setup ---------------- */
+  async function setupPrimaryCallerID() {
+    if (typeof numbersAPI === 'undefined') {
+      console.warn('[Numbers Page] numbersAPI not available');
+      return;
+    }
+
+    try {
+      // Get current primary caller ID
+      const primaryCallerId = numbersAPI.getPrimaryCallerId();
+
+      // Update UI to show which is primary
+      document.querySelectorAll('[data-asset-card]').forEach(card => {
+        const assetNumber = card.dataset.assetNumber || '';
+        const assetName = card.dataset.assetName || '';
+        
+        // Check if this card is the primary caller ID
+        const isPrimary = primaryCallerId && 
+          (primaryCallerId.number === assetNumber || primaryCallerId.assetId === card.dataset.assetId);
+        
+        // Find or create "Set as Primary" button
+        let primaryBtn = card.querySelector('[data-action="set-primary"]');
+        if (!primaryBtn) {
+          primaryBtn = document.createElement('button');
+          primaryBtn.className = 'w-full py-2.5 border border-white/10 rounded-xl text-xs font-bold hover:bg-white/5 transition-all flex items-center justify-center gap-2';
+          primaryBtn.dataset.action = 'set-primary';
+          
+          const settingsBtn = card.querySelector('[data-asset-settings]');
+          if (settingsBtn) {
+            settingsBtn.parentNode.insertBefore(primaryBtn, settingsBtn);
+          }
+        }
+
+        if (isPrimary) {
+          primaryBtn.innerHTML = '<span class="material-symbols-outlined text-base text-tertiary">check_circle</span><span class="text-tertiary">Primary Caller ID</span>';
+          primaryBtn.classList.add('border-tertiary/30', 'bg-tertiary/5');
+        } else {
+          primaryBtn.innerHTML = '<span class="material-symbols-outlined text-base">phone</span><span>Set as Primary</span>';
+          primaryBtn.classList.remove('border-tertiary/30', 'bg-tertiary/5');
+        }
+
+        // Add click handler
+        primaryBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          handleSetPrimaryCallerId(card, assetNumber, assetName);
+        });
+      });
+
+      console.log('[Numbers Page] Primary caller ID UI initialized');
+    } catch (error) {
+      console.error('[Numbers Page] Error setting up primary caller ID:', error);
+    }
+  }
+
+  /**
+   * Handle setting a number as primary caller ID
+   */
+  function handleSetPrimaryCallerId(card, phoneNumber, name) {
+    try {
+      const assetId = card.dataset.assetId;
+
+      // Set as primary in API
+      const result = numbersAPI.setPrimaryCallerId(phoneNumber, name, assetId);
+
+      if (result.success) {
+        // Update all cards
+        document.querySelectorAll('[data-asset-card]').forEach(c => {
+          const btn = c.querySelector('[data-action="set-primary"]');
+          if (c === card) {
+            btn.innerHTML = '<span class="material-symbols-outlined text-base text-tertiary">check_circle</span><span class="text-tertiary">Primary Caller ID</span>';
+            btn.classList.add('border-tertiary/30', 'bg-tertiary/5');
+          } else {
+            btn.innerHTML = '<span class="material-symbols-outlined text-base">phone</span><span>Set as Primary</span>';
+            btn.classList.remove('border-tertiary/30', 'bg-tertiary/5');
+          }
+        });
+
+        toast(`✓ ${name} set as primary caller ID for outbound calls`, 'success');
+        console.log('[Numbers Page] Primary caller ID set to:', phoneNumber);
+      }
+    } catch (error) {
+      console.error('[Numbers Page] Error setting primary caller ID:', error);
+      toast('Error setting primary caller ID', 'error');
+    }
+  }
+
+  /* ---------------- Numbers API Integration: Webhook Activity Loading ---------------- */
+  async function loadWebhookActivityForNumbers() {
+    if (typeof numbersAPI === 'undefined') {
+      console.warn('[Numbers Page] numbersAPI not available for webhook loading');
+      return;
+    }
+
+    try {
+      // Fetch webhook log
+      const webhookLog = await numbersAPI.fetchWebhookLog();
+
+      // For each asset card, filter webhook activity
+      document.querySelectorAll('[data-asset-card]').forEach(card => {
+        const phoneNumber = card.dataset.assetNumber || '';
+        
+        // Filter webhook events for this number
+        const relevantEvents = numbersAPI.filterWebhooksByNumber(phoneNumber, webhookLog);
+
+        // Find or create activity section
+        let activitySection = card.querySelector('[data-activity-section]');
+        if (!activitySection) {
+          activitySection = document.createElement('div');
+          activitySection.className = 'mt-4 pt-4 border-t border-white/5';
+          activitySection.dataset.activitySection = '';
+          card.appendChild(activitySection);
+        }
+
+        // Render activity
+        if (relevantEvents.length === 0) {
+          activitySection.innerHTML = '<p class="text-[10px] text-on-surface-variant/60">No recent activity</p>';
+        } else {
+          let html = '<p class="text-[10px] text-on-surface-variant/70 font-bold mb-2">Recent Activity:</p>';
+          
+          // Show last 3 events
+          relevantEvents.slice(0, 3).forEach(event => {
+            const formatted = numbersAPI.formatWebhookEvent(event);
+            html += `
+              <div class="text-[9px] text-on-surface-variant/60 py-1 flex items-center gap-2">
+                <span class="material-symbols-outlined text-xs">${formatted.direction === 'outbound' ? 'call_made' : 'call_received'}</span>
+                <span>${formatted.timeLabel}</span>
+              </div>
+            `;
+          });
+
+          activitySection.innerHTML = html;
+        }
+      });
+
+      console.log('[Numbers Page] Webhook activity loaded');
+    } catch (error) {
+      console.error('[Numbers Page] Error loading webhook activity:', error);
+    }
+  }
+
+  /* ---------------- Numbers API Integration: HubSpot Contact Matching ---------------- */
+  async function matchNumbersToHubSpotContacts() {
+    if (typeof numbersAPI === 'undefined') {
+      console.warn('[Numbers Page] numbersAPI not available for contact matching');
+      return;
+    }
+
+    try {
+      // Fetch HubSpot contacts
+      const contacts = await numbersAPI.fetchHubSpotContacts();
+
+      if (contacts.length === 0) {
+        console.log('[Numbers Page] No HubSpot contacts available for matching');
+        return;
+      }
+
+      // For each asset card, try to match to a contact
+      document.querySelectorAll('[data-asset-card]').forEach(card => {
+        const phoneNumber = card.dataset.assetNumber || '';
+        
+        // Find matching contact
+        const matchedContact = numbersAPI.findContactByPhoneNumber(phoneNumber, contacts);
+
+        if (matchedContact) {
+          // Find the assignee label and update it with contact info
+          const assigneeLabel = card.querySelector('[data-asset-assignee-label]');
+          if (assigneeLabel) {
+            const contactName = matchedContact.name || 
+              `${matchedContact.firstname || ''} ${matchedContact.lastname || ''}`.trim();
+            const company = matchedContact.company || matchedContact.organization || '';
+            
+            assigneeLabel.innerHTML = `<span class="text-tertiary font-bold">${contactName}</span>`;
+            if (company) {
+              assigneeLabel.innerHTML += `<br/><span class="text-[9px] text-on-surface-variant/50">${company}</span>`;
+            }
+          }
+
+          console.log('[Numbers Page] Matched number to HubSpot contact:', phoneNumber, matchedContact);
+        }
+      });
+
+      console.log('[Numbers Page] HubSpot contact matching completed');
+    } catch (error) {
+      console.error('[Numbers Page] Error matching HubSpot contacts:', error);
+    }
+  }
 
   /* ---------------- Init ---------------- */
   renderStats();
+    
+  // Sync numbers selected during onboarding to Active Numbers
+  // This must be called after renderStats() so that state.activeCount is correctly updated
+  syncOnboardingNumbers();
+    
+  // Initialize Numbers API integration
+  setupPrimaryCallerID();
+  loadWebhookActivityForNumbers();
+  matchNumbersToHubSpotContacts();
 })();
 </script>
+
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
+  <script src="./APIintegration/numbersAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

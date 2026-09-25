@@ -3,7 +3,7 @@
 <html class="dark" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>DialForge | Call Logs</title>
+<title>DialForge | Call History</title>
 <!-- Tailwind CSS CDN with Plugins -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <!-- Fonts -->
@@ -187,8 +187,6 @@
     }
 
 
-
-
     
         .crm-panel {
       width: 18rem;
@@ -224,8 +222,30 @@
       }
     }
 
-
-
+    .dial-pad-btn {
+      padding: 0.75rem;
+      background-color: rgb(30, 31, 39);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.5rem;
+      color: #e3e1ec;
+      font-family: "DM Sans";
+      font-weight: 700;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .dial-pad-btn:hover {
+      background-color: rgb(41, 41, 50);
+      border-color: rgba(255, 122, 28, 0.4);
+      color: #ffb4a2;
+    }
+    .dial-pad-btn:focus-visible {
+      outline: 2px solid #FF7A1C;
+      outline-offset: 2px;
+    }
+    .dial-pad-btn:active {
+      transform: scale(0.95);
+    }
 
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -245,8 +265,144 @@
 <body class="bg-surface text-on-surface font-dm-sans antialiased min-h-screen overflow-hidden">
 <div class="fixed inset-0 noise-overlay z-0"></div>
 
+<!-- BEGIN: DialPad Modal -->
+<div id="dialPadOverlay" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+  <div class="modal-in glass-card fire-glow w-full max-w-sm rounded-2xl p-8 flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <span class="text-[10px] font-extrabold text-tertiary uppercase tracking-widest">Dial Pad</span>
+      <button id="dialPadCloseBtn" class="text-on-surface-variant/60 hover:text-white transition-colors" aria-label="Close dial pad modal">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
 
+    <!-- Phone Number Display -->
+    <div class="mb-6">
+      <input 
+        id="dialPadDisplay" 
+        type="text" 
+        placeholder="Enter number" 
+        class="w-full px-4 py-4 bg-surface-container-low rounded-lg border border-white/10 text-white font-mono-data text-2xl text-center tracking-widest focus:outline-none focus:border-tertiary transition-colors placeholder-on-surface-variant/30"
+        inputmode="none"
+        autocomplete="off"
+        aria-label="Phone number input"
+      >
+    </div>
 
+    <!-- Number Pad Grid -->
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      <!-- Row 1: 1 2 3 -->
+      <button class="dial-pad-btn" data-digit="1" aria-label="1">1</button>
+      <button class="dial-pad-btn" data-digit="2" aria-label="2">2</button>
+      <button class="dial-pad-btn" data-digit="3" aria-label="3">3</button>
+      
+      <!-- Row 2: 4 5 6 -->
+      <button class="dial-pad-btn" data-digit="4" aria-label="4">4</button>
+      <button class="dial-pad-btn" data-digit="5" aria-label="5">5</button>
+      <button class="dial-pad-btn" data-digit="6" aria-label="6">6</button>
+      
+      <!-- Row 3: 7 8 9 -->
+      <button class="dial-pad-btn" data-digit="7" aria-label="7">7</button>
+      <button class="dial-pad-btn" data-digit="8" aria-label="8">8</button>
+      <button class="dial-pad-btn" data-digit="9" aria-label="9">9</button>
+      
+      <!-- Row 4: * 0 # -->
+      <button class="dial-pad-btn" data-digit="*" aria-label="Star">*</button>
+      <button class="dial-pad-btn" data-digit="0" aria-label="0">0</button>
+      <button class="dial-pad-btn" data-digit="#" aria-label="Hash">#</button>
+    </div>
+
+    <!-- Control Buttons Row -->
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      <!-- Delete Button -->
+      <button 
+        id="dialPadDeleteBtn" 
+        class="py-3 px-4 bg-surface-container-low hover:bg-surface-container-high border border-white/10 hover:border-fire-accent/40 rounded-lg text-on-surface-variant/80 hover:text-fire-accent transition-all font-button-text font-bold text-sm flex items-center justify-center gap-1"
+        aria-label="Delete last digit"
+      >
+        <span class="material-symbols-outlined text-lg">backspace</span>
+      </button>
+      
+      <!-- Plus Button -->
+      <button class="dial-pad-btn" data-digit="+" aria-label="Plus">+</button>
+      
+      <!-- Clear Button -->
+      <button 
+        id="dialPadClearBtn" 
+        class="py-3 px-4 bg-surface-container-low hover:bg-surface-container-high border border-white/10 hover:border-error-red/40 rounded-lg text-on-surface-variant/80 hover:text-error-red transition-all font-button-text font-bold text-sm"
+        aria-label="Clear all digits"
+      >
+        Clear
+      </button>
+    </div>
+
+    <!-- Call Now Button -->
+    <button 
+      id="dialPadCallNowBtn" 
+      class="w-full py-3 px-4 bg-fire-gradient hover:bg-fire-accent text-on-primary font-button-text font-bold text-sm rounded-lg transition-all duration-200 hover:shadow-lg active:scale-95"
+      disabled
+      aria-label="Call now"
+    >
+      <span class="flex items-center justify-center gap-2">
+        <span class="material-symbols-outlined">call</span>
+        <span>Call Now</span>
+      </span>
+    </button>
+  </div>
+</div>
+<!-- END: DialPad Modal -->
+ 
+<!-- BEGIN: Call Actions Modal -->
+<div id="callActionsModal" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+  <div class="modal-in glass-card fire-glow w-full max-w-sm rounded-2xl p-8 flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <span class="text-[10px] font-extrabold text-tertiary uppercase tracking-widest">Call Actions</span>
+        <h2 class="font-syne font-bold text-xl mt-2" id="callActionCallName">Unknown</h2>
+      </div>
+      <button id="callActionsClose" class="text-on-surface-variant/60 hover:text-white transition-colors" aria-label="Close modal">
+        <span class="material-symbols-outlined text-2xl">close</span>
+      </button>
+    </div>
+
+    <!-- Actions -->
+    <div class="space-y-3">
+      <!-- Create Ticket -->
+      <button id="createTicketBtn" class="w-full flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all border border-white/10">
+        <span class="material-symbols-outlined text-fire-orange">description</span>
+        <div class="text-left">
+          <p class="text-sm font-bold text-white">Create Ticket</p>
+          <p class="text-xs text-on-surface-variant">Save to Zendesk</p>
+        </div>
+      </button>
+
+      <!-- Enrich Unknown Caller -->
+      <button id="enrichCallerBtn" class="w-full flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all border border-white/10">
+        <span class="material-symbols-outlined text-ai-purple">auto_awesome</span>
+        <div class="text-left">
+          <p class="text-sm font-bold text-white">Enrich Number</p>
+          <p class="text-xs text-on-surface-variant">Apollo data lookup</p>
+        </div>
+      </button>
+
+      <!-- Log Note -->
+      <button id="logNoteBtn" class="w-full flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all border border-white/10">
+        <span class="material-symbols-outlined text-tertiary">note</span>
+        <div class="text-left">
+          <p class="text-sm font-bold text-white">Log Note</p>
+          <p class="text-xs text-on-surface-variant">Add disposition</p>
+        </div>
+      </button>
+    </div>
+
+    <!-- Close Button -->
+    <button id="callActionsCloseBtn" class="w-full mt-6 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold text-sm transition-all">
+      Close
+    </button>
+  </div>
+</div>
+<!-- END: Call Actions Modal -->
 
 <!-- BEGIN: IncomingCallWidget -->
 <div id="incomingCallOverlay" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
@@ -353,7 +509,7 @@
 <div class="h-8 w-px bg-white/10 hidden lg:block"></div>
   <div class="flex flex-col justify-center">
     <h2 class="text-xs font-bold text-on-surface-variant/60 uppercase tracking-widest leading-none mb-1">Page</h2>
-    <span class="text-sm font-bold text-white whitespace-nowrap">Call Logs</span>
+    <span class="text-sm font-bold text-white whitespace-nowrap">Call History</span>
   </div>
 
 </div>
@@ -468,7 +624,7 @@
   <a href="./notifications.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">notifications</span>
-      <span class="text-[8px] uppercase font-bold">Notif</span>
+      <span class="text-[8px] uppercase font-bold">Notifs</span>
     </button>
   </a>
  
@@ -592,9 +748,7 @@
 <button class="px-5 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-sm font-semibold flex items-center gap-2" id="exportCsvBtn" onclick="exportToCSV()">
 <span class="material-symbols-outlined text-lg">download</span> Export CSV
           </button>
-<button class="liquid-shimmer fire-gradient-bg px-5 py-2.5 rounded-xl text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-fire-orange/10 hover:scale-[1.02] active:scale-95 transition-all">
-<span class="material-symbols-outlined text-lg">settings_input_antenna</span> Live Session
-          </button>
+
 </div>
 </div>
 <div class="flex items-center gap-6">
@@ -645,7 +799,7 @@
 <!-- Table Body -->
 <div class="flex-1 overflow-y-auto divide-y divide-white/5" id="tableBody">
 <!-- Row 1: Alex Johnson -->
-<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Alex Johnson" data-number="+1 (555) 234-8902" data-direction="inbound" data-status="connected" data-duration="765" data-duration-label="12m 45s" data-timestamp="2026-07-14T14:45:00" data-date-label="Today, 2:45 PM" data-score="94">
+<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Alex Johnson" data-number="+1 (555) 234-8902" data-company="Acme Corporation" data-email="alex.johnson@acme.com" data-avatar="https://lh3.googleusercontent.com/aida-public/AB6AXuDOE-CEnYbczReeHsCA5IccneDKPz5lA4esf1XKpnzNeW0w6SYF4BCHDdvCZCcCTE9z_K3fRZ2vfp1YnuTrfp4y00YSPU1eoOGSmtMJBL2LuRPpbt1pebOoqz8ZsXPMxKdcS_ySjPCm9Y8EqeVGK2JV9xJwiF0adax7SYfG-bILe6hoRE3RDw2z7ED2W_EjYTieT0kIOa92R5S6Ap250KCu_d0_9JyLUoYKWt79InIBVoCqnyar1tXhg9ntQecsvC_n0q2UO6KUaZQ" data-jobTitle="Enterprise Lead" data-location="San Francisco, CA" data-direction="inbound" data-status="connected" data-duration="765" data-duration-label="12m 45s" data-timestamp="2026-07-14T14:45:00" data-date-label="Today, 2:45 PM" data-score="94">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 rounded-full border-2 border-fire-orange/30 p-0.5">
 <img alt="Alex J" class="w-full h-full rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOE-CEnYbczReeHsCA5IccneDKPz5lA4esf1XKpnzNeW0w6SYF4BCHDdvCZCcCTE9z_K3fRZ2vfp1YnuTrfp4y00YSPU1eoOGSmtMJBL2LuRPpbt1pebOoqz8ZsXPMxKdcS_ySjPCm9Y8EqeVGK2JV9xJwiF0adax7SYfG-bILe6hoRE3RDw2z7ED2W_EjYTieT0kIOa92R5S6Ap250KCu_d0_9JyLUoYKWt79InIBVoCqnyar1tXhg9ntQecsvC_n0q2UO6KUaZQ"/>
@@ -684,7 +838,7 @@
 </div>
 </div>
 <!-- Row 2: Sarah Kovic -->
-<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Sarah Kovic" data-number="+1 (415) 882-1093" data-direction="outbound" data-status="missed" data-duration="0" data-duration-label="--" data-timestamp="2026-07-14T13:12:00" data-date-label="Today, 1:12 PM" data-score="-1">
+<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Sarah Kovic" data-number="+1 (415) 882-1093" data-company="TechVenture Inc" data-email="sarah.kovic@techventure.com" data-avatar="https://lh3.googleusercontent.com/aida-public/AB6AXuA_ry0xi26QtC3v5Ki0y1dc14BmoJrljbfwgdSqAfbQZd6-ZfB45QzM4P2xHaTFMh1CLElzjzRDnY8g53PUfuaekBiijjENUojAaSdAQ3zpvho2P0q6ilLj_Br2iPQ1O9ed2XaEi2bWaOHO8iHXchRzfzVGov7HwubD6_5p8ja777HrosTtGudcS3O8Fgx4eqli0VYVatgDxdCUVtIcO_EWRS5FSqEgEDlX3KgA_idkjVYWD_MaKXcRMjxonbfjVYZchHR5YgPjvv0" data-jobTitle="Mid-Market Sales" data-location="San Jose, CA" data-direction="outbound" data-status="missed" data-duration="0" data-duration-label="--" data-timestamp="2026-07-14T13:12:00" data-date-label="Today, 1:12 PM" data-score="-1">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 rounded-full border-2 border-white/5 p-0.5">
 <img alt="Sarah K" class="w-full h-full rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_ry0xi26QtC3v5Ki0y1dc14BmoJrljbfwgdSqAfbQZd6-ZfB45QzM4P2xHaTFMh1CLElzjzRDnY8g53PUfuaekBiijjENUojAaSdAQ3zpvho2P0q6ilLj_Br2iPQ1O9ed2XaEi2bWaOHO8iHXchRzfzVGov7HwubD6_5p8ja777HrosTtGudcS3O8Fgx4eqli0VYVatgDxdCUVtIcO_EWRS5FSqEgEDlX3KgA_idkjVYWD_MaKXcRMjxonbfjVYZchHR5YgPjvv0"/>
@@ -717,7 +871,7 @@
 </div>
 </div>
 <!-- Row 3: Dominic Waters -->
-<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Dominic Waters" data-number="+44 20 7946 0122" data-direction="inbound" data-status="voicemail" data-duration="62" data-duration-label="1m 02s" data-timestamp="2026-07-14T10:33:00" data-date-label="Today, 10:33 AM" data-score="68">
+<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Dominic Waters" data-number="+44 20 7946 0122" data-company="Global Enterprises" data-email="dominic.waters@globalent.com" data-avatar="https://lh3.googleusercontent.com/aida-public/AB6AXuAnYeMh0E7KlgPTlkAktHmG0dvm-iCC-ZzwohaqieWDQ-nU_0plRtJXRxaopVwxEMrTdablmeLJJWHXmt2o8XaryA8JEZ3k1sHUQfEr5hEvv78Zuu0p-S2LHnCNQ_KOmXZ6R7dD2wpPPhcvNIL3rP0GYugDDGd9gLyzBFS_dl6Wv25rsXM7ZvHWMFiqxDNDRHJrfzUDb_ZUtnPeX3NzdKmEZj5qEKgjEQIYFKloz_jTUNXX3-ivgIwBkg1OytO2w5AWwADMOgebfVo" data-jobTitle="SMB Account Manager" data-location="London, UK" data-direction="inbound" data-status="voicemail" data-duration="62" data-duration-label="1m 02s" data-timestamp="2026-07-14T10:33:00" data-date-label="Today, 10:33 AM" data-score="68">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 rounded-full border-2 border-white/5 p-0.5">
 <img alt="Dominic W" class="w-full h-full rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnYeMh0E7KlgPTlkAktHmG0dvm-iCC-ZzwohaqieWDQ-nU_0plRtJXRxaopVwxEMrTdablmeLJJWHXmt2o8XaryA8JEZ3k1sHUQfEr5hEvv78Zuu0p-S2LHnCNQ_KOmXZ6R7dD2wpPPhcvNIL3rP0GYugDDGd9gLyzBFS_dl6Wv25rsXM7ZvHWMFiqxDNDRHJrfzUDb_ZUtnPeX3NzdKmEZj5qEKgjEQIYFKloz_jTUNXX3-ivgIwBkg1OytO2w5AWwADMOgebfVo"/>
@@ -755,14 +909,14 @@
 </button>
 </div>
 </div>
-<!-- Row 4: Elena Morales -->
-<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Elena Morales" data-number="+1 (212) 555-0198" data-direction="outbound" data-status="connected" data-duration="2712" data-duration-label="45m 12s" data-timestamp="2026-07-13T16:50:00" data-date-label="Yesterday, 4:50 PM" data-score="89">
+<!-- Row 4: Elena Rodriguez -->
+<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Elena Rodriguez" data-number="+1 (212) 555-0198" data-company="Premium Partners LLC" data-email="elena.rodriguez@premiumpartners.com" data-avatar="https://lh3.googleusercontent.com/aida-public/AB6AXuBRt_N07OFOPO0fWF8b8Q_mUKehhbSXHY1BRiLsFOKS6nMaX33lwlYnsDNyj_g7e0ix8YPOzgaiKkKO7lA-mgsm_KVCkTUq5mpj59PFOLtLrfqK1psjBYbMii8xQDOjfPQ9h9ISsYduVAAh5nY4IwTwFcX_52Aymx_v2IWXvkaGcePRPhTU1vg75WKWR4nOGvlO-uWhY61NImzxMzVGn_6I5GGtFMUNWIOoe5ywSoAH0cv8bGc2Rj8J_FX5tmcFFvUe13fKRPC1ACE" data-jobTitle="Key Account Executive" data-location="New York, NY" data-direction="outbound" data-status="connected" data-duration="2712" data-duration-label="45m 12s" data-timestamp="2026-07-13T16:50:00" data-date-label="Yesterday, 4:50 PM" data-score="89">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 rounded-full border-2 border-fire-orange/30 p-0.5">
 <img alt="Elena R" class="w-full h-full rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRt_N07OFOPO0fWF8b8Q_mUKehhbSXHY1BRiLsFOKS6nMaX33lwlYnsDNyj_g7e0ix8YPOzgaiKkKO7lA-mgsm_KVCkTUq5mpj59PFOLtLrfqK1psjBYbMii8xQDOjfPQ9h9ISsYduVAAh5nY4IwTwFcX_52Aymx_v2IWXvkaGcePRPhTU1vg75WKWR4nOGvlO-uWhY61NImzxMzVGn_6I5GGtFMUNWIOoe5ywSoAH0cv8bGc2Rj8J_FX5tmcFFvUe13fKRPC1ACE"/>
 </div>
 <div>
-<p class="font-syne font-bold text-white text-sm">Elena Morales</p>
+<p class="font-syne font-bold text-white text-sm">Elena Rodriguez</p>
 <p class="text-xs text-on-surface-variant">Key Account</p>
 </div>
 </div>
@@ -795,7 +949,7 @@
 </div>
 </div>
 <!-- Row 5: Marcus Vance -->
-<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Marcus Vance" data-number="+1 (800) 902-1200" data-direction="inbound" data-status="connected" data-duration="502" data-duration-label="08m 22s" data-timestamp="2026-07-13T14:15:00" data-date-label="Yesterday, 2:15 PM" data-score="42">
+<div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" data-name="Marcus Vance" data-number="+1 (800) 902-1200" data-company="Enterprise Solutions" data-email="marcus.vance@enterprisesol.com" data-avatar="https://lh3.googleusercontent.com/aida-public/AB6AXuByybGvM9JVPRZBbn1fS2sJ9BlSHAAflqwLl0L_lWcGfUzzDBEtImzdgm8vYfVLQ_zdwWkKycL_plNdquny69vnRNOhkkpZ9G79mcdhK15WJ61EGS8a8b3VjKOJ5Hb-rXWWITfpawAdwycCbMNhWKCv7lSJ3H3LsY1dfStAY0u6zld79OVRH4Ar8mu28pqjW7jcIBJ7EbqudjeFqOzcdfc3yI6eAFGAvtHnvMalCMcIYqIsS8qfM1ZgHUkpULEl3PQoBygQZA-Qr84" data-direction="inbound" data-status="connected" data-duration="502" data-duration-label="08m 22s" data-timestamp="2026-07-13T14:15:00" data-date-label="Yesterday, 2:15 PM" data-score="42">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 rounded-full border-2 border-white/5 p-0.5">
 <img alt="Marcus V" class="w-full h-full rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuByybGvM9JVPRZBbn1fS2sJ9BlSHAAflqwLl0L_lWcGfUzzDBEtImzdgm8vYfVLQ_zdwWkKycL_plNdquny69vnRNOhkkpZ9G79mcdhK15WJ61EGS8a8b3VjKOJ5Hb-rXWWITfpawAdwycCbMNhWKCv7lSJ3H3LsY1dfStAY0u6zld79OVRH4Ar8mu28pqjW7jcIBJ7EbqudjeFqOzcdfc3yI6eAFGAvtHnvMalCMcIYqIsS8qfM1ZgHUkpULEl3PQoBygQZA-Qr84"/>
@@ -1158,19 +1312,448 @@ No calls match your search or filters.
       URL.revokeObjectURL(url);
     }
 
+// ---------- Load completed calls from API and localStorage ----------
+    async function loadCompletedCalls() {
+      try {
+        // Check if callHistoryAPI is available
+        if (typeof callHistoryAPI === 'undefined') {
+          console.warn('[Call History] callHistoryAPI not available, trying localStorage');
+          loadFromLocalStorage();
+          return;
+        }
+
+        // Fetch call events from webhook log
+        const webhookEvents = await callHistoryAPI.fetchCallHistory();
+        
+        // Fetch HubSpot contacts for caller ID matching
+        const hubspotContacts = await callHistoryAPI.fetchHubSpotContactsForLookup();
+        const phoneLookupMap = callHistoryAPI.createPhoneLookupMap(hubspotContacts);
+
+        // Transform webhook events to call history records
+        const callRecords = webhookEvents.map(event => {
+          const contact = callHistoryAPI.findContactByPhone(event.phone_number || event.phone, phoneLookupMap);
+          return callHistoryAPI.transformWebhookEventToCall(event, contact);
+        }).filter(call => call !== null);
+
+        if (callRecords.length > 0) {
+          // Render calls from API
+          const sortedCalls = callRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          sortedCalls.forEach(call => {
+            renderCallHistoryRow(call);
+          });
+          console.log(`[Call History] Loaded ${callRecords.length} call(s) from API`);
+        } else {
+          console.warn('[Call History] No calls from API, trying localStorage');
+          loadFromLocalStorage();
+        }
+      } catch (error) {
+        console.error('[Call History] Error loading calls from API:', error);
+        loadFromLocalStorage();
+      }
+    }
+
+    /**
+     * Load calls from localStorage as fallback
+     */
+    function loadFromLocalStorage() {
+      try {
+        const stored = localStorage.getItem('dialForgeState');
+        if (!stored) return; // No saved state
+        
+        const appState = JSON.parse(stored);
+        if (!Array.isArray(appState.callHistory) || appState.callHistory.length === 0) {
+          return; // No call history to load
+        }
+        
+        // Render completed calls in reverse order (newest first)
+        const completedCalls = [...appState.callHistory].reverse();
+        completedCalls.forEach(entry => {
+          renderCallHistoryRow(entry);
+        });
+        
+        console.log(`[Call History] Loaded ${completedCalls.length} completed call(s) from localStorage`);
+      } catch (e) {
+        console.error('[Call History] Error loading completed calls from localStorage:', e);
+      }
+    }
+    
+    function getInitials(name) {
+      if (!name || typeof name !== 'string') return 'NA';
+      name = name.trim();
+      if (!name) return 'NA';
+      
+      const parts = name.split(/\s+/).filter(p => p.length > 0);
+      if (parts.length === 0) return 'NA';
+      if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    
+    function renderCallHistoryRow(entry) {
+      // Create avatar HTML - handle three cases: image, initials, or NA
+      let avatarHTML = '';
+      
+      if (entry.avatar && entry.avatar.trim() !== '') {
+        // Has avatar image - render with fallback to initials on error
+        const initials = getInitials(entry.name);
+        avatarHTML = `
+          <div class="w-10 h-10 rounded-full border-2 border-white/5 p-0.5">
+            <img 
+              alt="${entry.name || 'Contact'}" 
+              class="w-full h-full rounded-full call-history-avatar" 
+              src="${entry.avatar}"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+              data-contact-name="${entry.name || ''}"
+            />
+            <div style="display:none; width:100%; height:100%; border-radius:50%; background-color:#9B6DFF; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:12px;">
+              ${initials}
+            </div>
+          </div>
+        `;
+      } else {
+        // No avatar - show initials
+        const initials = getInitials(entry.name);
+        avatarHTML = `
+          <div class="w-10 h-10 rounded-full border-2 border-white/5 p-0.5 bg-ai-purple/10 flex items-center justify-center">
+            <span style="color:#9B6DFF; font-weight:bold; font-size:12px;">${initials}</span>
+          </div>
+        `;
+      }
+      
+      // Determine status badge styling
+      let statusHTML = '';
+      if (entry.status === 'COMPLETED') {
+        statusHTML = `<span class="bg-tertiary/10 text-tertiary border border-tertiary/20 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-tighter">COMPLETED</span>`;
+      } else if (entry.statusClasses) {
+        statusHTML = `<span class="${entry.statusClasses} px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-tighter">${entry.status}</span>`;
+      } else {
+        statusHTML = `<span class="bg-tertiary/10 text-tertiary border border-tertiary/20 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-tighter">${entry.status}</span>`;
+      }
+      
+      // Create row HTML
+      const rowHTML = `
+        <div class="grid grid-cols-[2fr_1.5fr_0.6fr_1fr_1.5fr_1.5fr_1fr] px-6 py-5 items-center hover:bg-white/[0.03] transition-all group" 
+             data-id="${entry.id}"
+             data-name="${entry.name}" 
+             data-number="${entry.number}" 
+             data-company="${entry.company || ''}" 
+             data-email="${entry.email || ''}" 
+             data-avatar="${entry.avatar || ''}"
+             data-direction="${entry.direction || 'inbound'}" 
+             data-status="completed"
+             data-duration="${entry.durationSeconds}" 
+             data-duration-label="${entry.durationLabel}" 
+             data-timestamp="${entry.timestamp}" 
+             data-date-label="${entry.dateLabel}">
+          
+          <!-- Column 1: Contact Avatar + Name -->
+          <div class="flex items-center gap-3">
+            ${avatarHTML}
+            <div>
+              <p class="font-syne font-bold text-white text-sm">${entry.name || 'Unknown Contact'}</p>
+              <p class="text-xs text-on-surface-variant">${entry.company || 'N/A'}</p>
+            </div>
+          </div>
+          
+          <!-- Column 2: Phone Number -->
+          <span class="font-mono text-xs text-on-surface-variant">${entry.number || 'N/A'}</span>
+          
+          <!-- Column 3: Direction Icon -->
+          <div class="flex justify-center">
+            <div class="w-8 h-8 rounded-full ${entry.direction === 'outbound' ? 'bg-tertiary/10 text-tertiary' : 'bg-fire-accent/10 text-fire-accent'} flex items-center justify-center">
+              <span class="material-symbols-outlined text-[18px]">${entry.direction === 'outbound' ? 'call_made' : 'call_received'}</span>
+            </div>
+          </div>
+          
+          <!-- Column 4: Status Badge -->
+          <div>
+            ${statusHTML}
+          </div>
+          
+          <!-- Column 5: Duration -->
+          <div class="flex flex-col">
+            <span class="text-sm font-medium text-white">${entry.durationLabel || '--'}</span>
+            <span class="text-[11px] text-on-surface-variant">${entry.dateLabel || 'Unknown time'}</span>
+          </div>
+          
+          <!-- Column 6: Score/Performance (placeholder for completed calls) -->
+          <div class="pr-8">
+            <span class="text-xs text-on-surface-variant/40 font-mono italic">N/A</span>
+          </div>
+          
+          <!-- Column 7: Callback Button -->
+          <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+            <button class="callback-btn w-8 h-8 flex items-center justify-center rounded-lg bg-fire-orange text-white hover:scale-110" title="Call back">
+              <span class="material-symbols-outlined text-sm">call</span>
+            </button>
+            <button class="more-actions-btn w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:scale-110" title="More actions">
+              <span class="material-symbols-outlined text-sm">more_vert</span>
+            </button>
+          </div>
+        </div>
+      `;
+      
+      // Insert at the beginning of the table (most recent first)
+      const firstRow = tableBody.querySelector(':scope > div[data-name]');
+      if (firstRow) {
+        firstRow.insertAdjacentHTML('beforebegin', rowHTML);
+      } else {
+        tableBody.insertAdjacentHTML('afterbegin', rowHTML);
+      }
+    }
+    
+    // Initialize call history table with completed calls on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      loadCompletedCalls();
+      
+      // Setup call actions modal handlers
+      const callActionsModal = document.getElementById('callActionsModal');
+      const callActionsClose = document.getElementById('callActionsClose');
+      const callActionsCloseBtn = document.getElementById('callActionsCloseBtn');
+      const createTicketBtn = document.getElementById('createTicketBtn');
+      const enrichCallerBtn = document.getElementById('enrichCallerBtn');
+      const logNoteBtn = document.getElementById('logNoteBtn');
+
+      if (callActionsClose) {
+        callActionsClose.addEventListener('click', closeCallActionsModal);
+      }
+      if (callActionsCloseBtn) {
+        callActionsCloseBtn.addEventListener('click', closeCallActionsModal);
+      }
+      if (callActionsModal) {
+        callActionsModal.addEventListener('click', (e) => {
+          if (e.target === callActionsModal) {
+            closeCallActionsModal();
+          }
+        });
+      }
+
+      if (createTicketBtn) {
+        createTicketBtn.addEventListener('click', () => handleCreateTicket());
+      }
+      if (enrichCallerBtn) {
+        enrichCallerBtn.addEventListener('click', () => handleEnrichCaller());
+      }
+      if (logNoteBtn) {
+        logNoteBtn.addEventListener('click', () => handleLogNote());
+      }
+      }, 100);
+
     // ---------- Call back ----------
-    function startCall(name, number) {
-      const url = `activeCall.html?contact=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`;
+    function startCall(name, number, company, email, avatar, jobTitle, location) {
+      const params = new URLSearchParams();
+      if (name) params.append('contact', name);
+      if (number) params.append('number', number);
+      if (company) params.append('company', company);
+      if (email) params.append('email', email);
+      if (avatar) params.append('avatar', avatar);
+      if (jobTitle) params.append('jobTitle', jobTitle);
+      if (location) params.append('location', location);
+      
+      const url = `activeCall.html?${params.toString()}`;
       window.location.href = url;
     }
 
-    document.querySelectorAll('.callback-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+        // Use event delegation on tableBody to handle dynamically created callback buttons
+    // This ensures that buttons added by loadCompletedCalls() are functional
+    tableBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.callback-btn');
+      const moreActionsBtn = e.target.closest('.more-actions-btn');
+
+      if (btn) {
         e.stopPropagation();
         const row = btn.closest('[data-name]');
-        if (row) startCall(row.dataset.name, row.dataset.number);
+        if (row) {
+          const name = row.dataset.name || '';
+          const number = row.dataset.number || '';
+          const company = row.dataset.company || '';
+          const email = row.dataset.email || '';
+          const avatar = row.dataset.avatar || '';
+          const jobTitle = row.dataset.jobTitle || '';
+          const location = row.dataset.location || '';
+          
+          startCall(name, number, company, email, avatar, jobTitle, location);
+        }
+      } else if (moreActionsBtn) {
+        e.stopPropagation();
+        const row = moreActionsBtn.closest('[data-name]');
+        if (row) {
+          showCallActionMenu(row);
+        }
+      }
       });
-    });
+
+      /**
+     * Show call action menu (Create Ticket, Enrich, Log Note)
+     */
+    function showCallActionMenu(row) {
+      const callId = row.dataset.id;
+      const name = row.dataset.name;
+      const number = row.dataset.number;
+      const company = row.dataset.company;
+      const email = row.dataset.email;
+      
+      // Store call data temporarily for action handlers
+      window.selectedCall = {
+        id: callId,
+        name: name,
+        number: number,
+        company: company,
+        email: email,
+        timestamp: row.dataset.timestamp,
+        direction: row.dataset.direction,
+        duration: row.dataset.duration,
+        durationLabel: row.dataset.durationLabel
+      };
+
+      // Show context menu or modal
+      showCallActionsModal();
+    }
+
+    /**
+     * Show modal for call actions
+     */
+    function showCallActionsModal() {
+      if (!window.selectedCall) return;
+
+      const modal = document.getElementById('callActionsModal');
+      if (!modal) {
+        console.warn('[Call History] callActionsModal not found');
+        return;
+      }
+
+      // Update modal with selected call info
+      const callNameEl = document.getElementById('callActionCallName');
+      if (callNameEl) {
+        callNameEl.textContent = window.selectedCall.name || 'Unknown';
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    /**
+     * Close call actions modal
+     */
+    function closeCallActionsModal() {
+      const modal = document.getElementById('callActionsModal');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+      window.selectedCall = null;
+    }
+
+    /**
+     * Handle Create Ticket action
+     */
+    async function handleCreateTicket() {
+      if (!window.selectedCall) return;
+
+      if (typeof callHistoryAPI === 'undefined') {
+        alert('Call History API not available');
+        return;
+      }
+
+      try {
+        const btn = document.getElementById('createTicketBtn');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="material-symbols-outlined animate-spin">hourglass_empty</span><div><p class="text-sm font-bold">Creating...</p></div>';
+        }
+
+        const result = await callHistoryAPI.createZendeskTicket(window.selectedCall);
+
+        if (result.success) {
+          alert(`✓ ${result.message}`);
+          closeCallActionsModal();
+        } else {
+          alert(`Error: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('[Call History] Error creating ticket:', error);
+        alert(`Error: ${error.message}`);
+      } finally {
+        const btn = document.getElementById('createTicketBtn');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span class="material-symbols-outlined text-fire-orange">description</span><div><p class="text-sm font-bold text-white">Create Ticket</p><p class="text-xs text-on-surface-variant">Save to Zendesk</p></div>';
+        }
+      }
+    }
+
+    /**
+     * Handle Enrich Caller action
+     */
+    async function handleEnrichCaller() {
+      if (!window.selectedCall) return;
+
+      if (typeof callHistoryAPI === 'undefined') {
+        alert('Call History API not available');
+        return;
+      }
+
+      try {
+        const btn = document.getElementById('enrichCallerBtn');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-ai-purple">hourglass_empty</span><div><p class="text-sm font-bold">Enriching...</p></div>';
+        }
+
+        const result = await callHistoryAPI.enrichCallWithApollo(window.selectedCall);
+
+        if (result.success) {
+          alert(`✓ Contact enriched: ${result.enrichedContact.email || result.enrichedContact.phone || 'updated'}`);
+          closeCallActionsModal();
+        } else {
+          alert(`Error: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('[Call History] Error enriching caller:', error);
+        alert(`Error: ${error.message}`);
+      } finally {
+        const btn = document.getElementById('enrichCallerBtn');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span class="material-symbols-outlined text-ai-purple">auto_awesome</span><div><p class="text-sm font-bold text-white">Enrich Number</p><p class="text-xs text-on-surface-variant">Apollo data lookup</p></div>';
+        }
+      }
+    }
+
+    /**
+     * Handle Log Note action
+     */
+    function handleLogNote() {
+      if (!window.selectedCall) return;
+
+      const note = prompt('Enter call note or disposition:', '');
+      if (!note || note.trim() === '') return;
+
+      handleLogNoteWithText(note);
+    }
+
+    /**
+     * Log note to Zapier
+     */
+    async function handleLogNoteWithText(note) {
+      if (!window.selectedCall) return;
+
+      if (typeof callHistoryAPI === 'undefined') {
+        alert('Call History API not available');
+        return;
+      }
+
+      try {
+        const result = await callHistoryAPI.logCallNoteToZapier(window.selectedCall, note);
+
+        if (result.success) {
+          alert(`✓ ${result.message}`);
+          closeCallActionsModal();
+        } else {
+          alert(`Error: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('[Call History] Error logging note:', error);
+        alert(`Error: ${error.message}`);
+      }
+    }
 
     // ---------- Init ----------
     updateSortIcons(currentSort.key, currentSort.dir);
@@ -1503,7 +2086,7 @@ No calls match your search or filters.
     voicemailBtn.addEventListener('click', sendToVoicemail);
     holdBtn.addEventListener('click', toggleHold);
     endBtn.addEventListener('click', endCall);
-    newCallBtn?.addEventListener('click', openNewCallModal);
+    newCallBtn?.addEventListener('click', () => DialPad.open());
     cancelCallBtn?.addEventListener('click', closeNewCallModal);
     cancelCallSecondaryBtn?.addEventListener('click', closeNewCallModal);
     startCallBtn?.addEventListener('click', startOutboundCall);
@@ -1522,8 +2105,6 @@ No calls match your search or filters.
     renderTimer();
   })();
 </script>
-
-
 
 
 <script data-purpose="crm-panel">
@@ -1676,7 +2257,219 @@ No calls match your search or filters.
   })();
 </script>
 
+<!-- BEGIN: DialPad Module -->
+<script data-purpose="dial-pad">
+// DialPad Module
+  const DialPad = {
+    state: {
+      isOpen: false,
+      phoneNumber: '',
+      eventListenersAttached: false
+    },
 
+    get overlay() {
+      return document.getElementById('dialPadOverlay');
+    },
+
+    get display() {
+      return document.getElementById('dialPadDisplay');
+    },
+
+    get callNowBtn() {
+      return document.getElementById('dialPadCallNowBtn');
+    },
+
+    open() {
+      if (!this.state.isOpen) {
+        this.reset();
+        this.overlay.classList.remove('hidden');
+        this.state.isOpen = true;
+        this.display.focus();
+        this.attachEventListeners();
+      }
+    },
+
+    close() {
+      if (this.state.isOpen) {
+        this.overlay.classList.add('hidden');
+        this.state.isOpen = false;
+        this.reset();
+      }
+    },
+
+    reset() {
+      this.state.phoneNumber = '';
+      this.display.value = '';
+      this.callNowBtn.disabled = true;
+    },
+
+    addDigit(digit) {
+      this.state.phoneNumber += digit;
+      this.display.value = this.state.phoneNumber;
+      this.updateCallButton();
+    },
+
+    deleteLastDigit() {
+      if (this.state.phoneNumber.length > 0) {
+        this.state.phoneNumber = this.state.phoneNumber.slice(0, -1);
+        this.display.value = this.state.phoneNumber;
+        this.updateCallButton();
+      }
+    },
+
+    clearAll() {
+      this.state.phoneNumber = '';
+      this.display.value = '';
+      this.updateCallButton();
+    },
+
+    updateCallButton() {
+      this.callNowBtn.disabled = this.state.phoneNumber.length === 0;
+    },
+
+    startCall() {
+      if (this.state.phoneNumber.length > 0) {
+        // Store the phone number in localStorage for activeCall.html to retrieve
+        try {
+          localStorage.setItem('dialforgeDialPadNumber', this.state.phoneNumber);
+        } catch (e) {
+          console.error('Error saving phone number to localStorage:', e);
+        }
+        this.close();
+        // Navigate to active call page
+        window.location.href = './activeCall.html';
+      }
+    },
+
+    attachEventListeners() {
+      if (this.state.eventListenersAttached) return;
+
+      // Digit pad buttons
+      document.querySelectorAll('.dial-pad-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const digit = btn.dataset.digit;
+          this.addDigit(digit);
+        });
+      });
+
+      // Delete button
+      const deleteBtn = document.getElementById('dialPadDeleteBtn');
+      if (deleteBtn && !deleteBtn.dataset.listenerAttached) {
+        deleteBtn.addEventListener('click', () => this.deleteLastDigit());
+        deleteBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Clear button
+      const clearBtn = document.getElementById('dialPadClearBtn');
+      if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.addEventListener('click', () => this.clearAll());
+        clearBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Call Now button
+      if (this.callNowBtn && !this.callNowBtn.dataset.listenerAttached) {
+        this.callNowBtn.addEventListener('click', () => this.startCall());
+        this.callNowBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Close button
+      const closeBtn = document.getElementById('dialPadCloseBtn');
+      if (closeBtn && !closeBtn.dataset.listenerAttached) {
+        closeBtn.addEventListener('click', () => this.close());
+        closeBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Close on overlay click (outside modal)
+      if (!this.overlay.dataset.listenerAttached) {
+        this.overlay.addEventListener('click', (e) => {
+          if (e.target === this.overlay) {
+            this.close();
+          }
+        });
+        this.overlay.dataset.listenerAttached = 'true';
+      }
+
+      // Close on Escape key
+      if (!this.state.escapeListenerAttached) {
+        const escapeHandler = (e) => {
+          if (e.key === 'Escape' && this.state.isOpen) {
+            this.close();
+          }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        this.state.escapeListenerAttached = true;
+      }
+      
+      // Keyboard number input (0-9, +, (, ), -, space)
+      if (!this.state.keyboardInputAttached) {
+        const keyboardHandler = (e) => {
+          if (!this.state.isOpen) return;
+          
+          const key = e.key;
+          
+          // Handle Backspace key - reuse existing deleteLastDigit function
+          if (key === 'Backspace') {
+            e.preventDefault();
+            this.deleteLastDigit();
+            return;
+          }
+          
+          // Handle numeric keys (0-9)
+          if (/^\d$/.test(key)) {
+            e.preventDefault();
+            this.addDigit(key);
+            return;
+          }
+          
+          // Handle phone number formatting characters: +, (, ), -, space
+          if (/^[+\(\)\-\s]$/.test(key)) {
+            e.preventDefault();
+            this.addDigit(key);
+            return;
+          }
+        };
+        document.addEventListener('keydown', keyboardHandler);
+        this.state.keyboardInputAttached = true;
+      }
+
+      this.state.eventListenersAttached = true;
+    },
+
+    attachKeyboardShortcut() {
+      document.addEventListener('keydown', (e) => {
+        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+        const isKKey = e.key.toLowerCase() === 'k';
+        
+        // Don't trigger if user is typing in an input, textarea, or contenteditable element
+        const target = e.target;
+        const isEditableElement = 
+          target.tagName === 'INPUT' && target.id !== 'dialPadDisplay' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true';
+        
+        if (isCtrlOrCmd && isKKey && !isEditableElement) {
+          e.preventDefault();
+          this.open();
+        }
+      });
+    }
+  };
+
+  // Initialize the app when DOM is ready
+  document.addEventListener('DOMContentLoaded', () => {
+    DialPad.attachKeyboardShortcut();
+  });
+
+  // Make DialPad globally accessible
+  window.DialPad = DialPad;
+</script>
+<!-- END: DialPad Module -->
+
+<!-- API Integration Scripts -->
+<script src="./APIintegration/dialforgeAPI.js"></script>
+<script src="./APIintegration/crmAPI.js"></script>
+<script src="./APIintegration/contactsAPI.js"></script>
+<script src="./APIintegration/callHistoryAPI.js"></script>
 
 <!-- BEGIN: Usage Minutes Synchronization -->
 <script data-purpose="sync-usage-minutes">

@@ -458,11 +458,11 @@
     <span class="material-symbols-outlined">call</span>
     <span class="text-[8px] uppercase font-bold">Call</span>
   </a>
-  <a href="./supportQueue_x" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
+  <a href="./supportQueue.html" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
     <span class="material-symbols-outlined">queue</span>
     <span class="text-[8px] uppercase font-bold">Queue</span>
   </a>
-  <a href="./callHistory" class="block w-full">
+  <a href="./callCoaching.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">graphic_eq</span>
       <span class="text-[8px] uppercase font-bold">Coaching</span>
@@ -1457,12 +1457,41 @@
         }
 
         if (testBtn && input) {
-          testBtn.addEventListener('click', () => {
-            if (!input.value.trim()) {
-              showToast('Enter a webhook URL before sending a test.', 'error');
+          testBtn.addEventListener('click', async () => {
+                        if (typeof apiSettingsAPI === 'undefined') {
+              showToast('API not available', 'error');
               return;
             }
-            showToast('Test payload sent to your webhook URL.', 'info');
+
+            // Disable button to prevent duplicate submissions
+            testBtn.disabled = true;
+            testBtn.classList.add('opacity-60', 'cursor-wait');
+            const originalText = testBtn.innerHTML;
+            testBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">hourglass_empty</span> Sending...';
+
+            try {
+              // Send test webhook using API
+              const result = await apiSettingsAPI.sendTestWebhook();
+
+              if (result.success) {
+                showToast(result.message, 'success');
+                
+                // Optionally refresh webhook log to show new test event
+                setTimeout(() => {
+                  loadWebhookLog();
+                }, 1500);
+              } else {
+                showToast(result.message, 'error');
+              }
+            } catch (error) {
+              console.error('[API Settings] Error sending test webhook:', error);
+              showToast(`Error: ${error.message}`, 'error');
+            } finally {
+              // Re-enable button
+              testBtn.disabled = false;
+              testBtn.classList.remove('opacity-60', 'cursor-wait');
+              testBtn.innerHTML = originalText;
+            }
           });
         }
       }
@@ -1522,6 +1551,127 @@
         });
         showToast('Settings reverted to default values.', 'info');
       }
+      
+      /* ============================================================
+         API SETTINGS INTEGRATION
+      ============================================================ */
+
+      /**
+       * Load and display API status board
+       */
+      async function loadStatusBoard() {
+        if (typeof apiSettingsAPI === 'undefined') {
+          console.warn('[API Settings] apiSettingsAPI not available');
+          return;
+        }
+
+        try {
+          const statusGrid = document.getElementById('statusBoardGrid');
+          if (!statusGrid) return;
+
+          // Fetch API status
+          const status = await apiSettingsAPI.getApiStatus();
+
+          // Clear loading state
+          statusGrid.innerHTML = '';
+
+          // Vendors to display
+          const vendors = ['HubSpot', 'Zendesk', 'Apollo', 'Zapier'];
+
+          // Render status cards for each vendor
+          vendors.forEach(vendor => {
+            const vendorStatus = apiSettingsAPI.getVendorStatusBadge(vendor, status);
+
+            const card = document.createElement('div');
+            card.className = 'glass-card p-4 rounded-2xl';
+            card.innerHTML = `
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-lg ${vendorStatus.badgeClass.split(' ').filter(c => c.startsWith('text-'))[0]}">${vendorStatus.icon}</span>
+                <div>
+                  <p class="text-sm font-bold text-white">${vendorStatus.vendor}</p>
+                  <span class="inline-block text-[10px] font-bold px-2 py-1 rounded-full mt-1 ${vendorStatus.badgeClass}">${vendorStatus.statusText}</span>
+                </div>
+              </div>
+            `;
+
+            statusGrid.appendChild(card);
+          });
+
+          console.log('[API Settings] Status board loaded');
+        } catch (error) {
+          console.error('[API Settings] Error loading status board:', error);
+        }
+      }
+
+      /**
+       * Load and display webhook event log
+       */
+      async function loadWebhookLog() {
+        if (typeof apiSettingsAPI === 'undefined') {
+          console.warn('[API Settings] apiSettingsAPI not available');
+          return;
+        }
+
+        try {
+          const tableBody = document.getElementById('webhookLogTableBody');
+          if (!tableBody) return;
+
+          // Fetch webhook log
+          const events = await apiSettingsAPI.getWebhookLog();
+
+          if (!Array.isArray(events) || events.length === 0) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="3" class="px-4 py-8 text-center text-on-surface-variant/60">
+                  No webhook events recorded
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          // Render webhook events (most recent first, limit to 20)
+          const rowsHtml = events
+            .slice(0, 20)
+            .map(event => {
+              const formatted = apiSettingsAPI.formatWebhookEvent(event);
+              if (!formatted) return '';
+
+              return `
+                <tr class="border-b border-white/5 hover:bg-white/2 transition-colors">
+                  <td class="px-4 py-3 text-sm text-white font-mono-data">${formatted.timestamp}</td>
+                  <td class="px-4 py-3 text-sm text-on-surface-variant">${formatted.event_type}</td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block text-[10px] font-bold px-2 py-1 rounded-full ${
+                      formatted.status === 'success' || formatted.status === 'completed'
+                        ? 'bg-tertiary/10 text-tertiary'
+                        : formatted.status === 'pending'
+                        ? 'bg-secondary/10 text-secondary'
+                        : 'bg-error-red/10 text-error-red'
+                    }">${formatted.status}</span>
+                  </td>
+                </tr>
+              `;
+            })
+            .join('');
+
+          tableBody.innerHTML = rowsHtml;
+
+          console.log('[API Settings] Webhook log loaded:', events.length, 'events');
+        } catch (error) {
+          console.error('[API Settings] Error loading webhook log:', error);
+          const tableBody = document.getElementById('webhookLogTableBody');
+          if (tableBody) {
+            tableBody.innerHTML = `
+              <tr>
+                <td colspan="3" class="px-4 py-8 text-center text-error-red/60">
+                  Error loading webhook events
+                </td>
+              </tr>
+            `;
+          }
+        }
+      }
 
       /* ============================================================
          WIRE UP
@@ -1531,6 +1681,10 @@
       initDropdowns();
       initApiKey();
       initWebhookUrl();
+      
+      // Load API status and webhook log
+      loadStatusBoard();
+      loadWebhookLog();
 
       const saveBtn = document.getElementById('save-changes-btn');
       if (saveBtn) saveBtn.addEventListener('click', saveSettings);
@@ -1542,6 +1696,11 @@
       if (cancelBtn) cancelBtn.addEventListener('click', revertSettings);
     })();
   </script>
+
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/apiSettingsAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

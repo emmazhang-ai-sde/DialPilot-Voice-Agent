@@ -675,7 +675,7 @@
   <a href="./notifications.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">notifications</span>
-      <span class="text-[8px] uppercase font-bold">Notif</span>
+      <span class="text-[8px] uppercase font-bold">Notifs</span>
     </button>
   </a>
 </div>
@@ -783,6 +783,77 @@ Complete Call
 </button>
 </div>
 <!-- END: Rep Notes -->
+
+<!-- BEGIN: Zendesk Support Ticket -->
+<section class="mt-10">
+<h3 class="font-mono text-sm uppercase tracking-widest text-white mb-4">Convert to Support Ticket</h3>
+<button id="openZendeskModalBtn" class="w-full px-6 py-3 bg-teal-support/10 hover:bg-teal-support/20 border border-teal-support/30 rounded-xl text-teal-support font-bold transition-all">
+Convert Call to Support Ticket
+</button>
+</section>
+<!-- END: Zendesk Support Ticket -->
+
+<!-- Zendesk Ticket Modal -->
+<div id="zendeskTicketModal" class="hidden fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+<div class="modal-in glass-card w-full max-w-lg rounded-3xl p-6 shadow-2xl">
+<div class="mb-6 flex items-start justify-between gap-3">
+<div>
+<p class="text-[10px] font-extrabold uppercase tracking-[0.3em] text-teal-support">Support</p>
+<h4 class="text-lg font-section-header text-white">Create Support Ticket</h4>
+</div>
+<button id="closeZendeskModalBtn" type="button" class="rounded-full border border-white/10 bg-surface-container-high/70 p-2 text-on-surface-variant transition-all hover:bg-white/10 hover:text-white" aria-label="Close zendesk modal">
+<span class="material-symbols-outlined text-base">close</span>
+</button>
+</div>
+
+<div class="space-y-4">
+<!-- Subject -->
+<div>
+<label class="text-xs uppercase tracking-widest text-on-surface-variant/70 mb-2 block">Subject</label>
+<input id="ticketSubject" type="text" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-teal-support/50 transition-colors" placeholder="Ticket subject...">
+</div>
+
+<!-- Description -->
+<div>
+<label class="text-xs uppercase tracking-widest text-on-surface-variant/70 mb-2 block">Description</label>
+<textarea id="ticketDescription" rows="4" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-teal-support/50 transition-colors resize-none" placeholder="Ticket description..."></textarea>
+</div>
+
+<!-- Priority -->
+<div>
+<label class="text-xs uppercase tracking-widest text-on-surface-variant/70 mb-2 block">Priority</label>
+<select id="ticketPriority" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-teal-support/50 transition-colors">
+<option value="low">Low</option>
+<option value="normal" selected>Normal</option>
+<option value="high">High</option>
+<option value="urgent">Urgent</option>
+</select>
+</div>
+
+<!-- Caller Phone (pre-filled) -->
+<div class="text-xs text-on-surface-variant/60">
+Caller: <span id="ticketCallerDisplay" class="text-white font-bold">Unknown</span>
+</div>
+</div>
+
+<!-- Footer -->
+<div class="flex gap-3 mt-6 pt-6 border-t border-white/5">
+<button id="cancelZendeskBtn" type="button" class="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-bold text-white transition-all">Cancel</button>
+<button id="submitZendeskBtn" type="button" class="flex-1 px-4 py-2 bg-teal-support text-on-tertiary rounded-xl font-bold transition-all hover:opacity-90">Create Ticket</button>
+</div>
+</div>
+</div>
+<!-- BEGIN: Quick Actions -->
+<section class="mt-10">
+<h3 class="font-mono text-sm uppercase tracking-widest text-white mb-4">Quick Actions</h3>
+<div class="flex gap-3 flex-wrap">
+<button id="sendToSlackBtn" class="flex-1 min-w-[120px] px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white font-bold text-sm transition-all">
+Send to Slack
+</button>
+</div>
+</section>
+<!-- END: Quick Actions -->
+
 </div>
 <!-- End Left Column -->
 <!-- Right Column (Sidebar Actions) -->
@@ -1109,6 +1180,16 @@ Complete Call
   </div>
 </aside>
 <!--End CRM-->
+
+<!-- BEGIN: API Integration Scripts -->
+<!-- Load universal API infrastructure first -->
+<script src="./APIintegration/dialforgeAPI.js"></script>
+<!-- Load centralized CRM API layer -->
+<script src="./APIintegration/crmAPI.js"></script>
+<!-- Load Post Call-specific API layer -->
+<script src="./APIintegration/postCallAPI.js"></script>
+<!-- END: API Integration Scripts -->
+
 <script data-purpose="incoming-call-and-timer">
   (function () {
     // ---------------------------------------------------------------------
@@ -1716,18 +1797,54 @@ Complete Call
 
   
   function createCallHistoryEntry() {
-    // Create a completed call entry using current CALL state
+    // Get the actual contact data from the completed call
+    // Priority: window.dialforgeActiveCallData (set by sync script) > dialforgeLastCompletedCall > CALL object
+    let contact = {};
+    let callData = {};
+    let direction = CALL.direction || 'inbound';
+    
+    // Try to get data from global sync object first (most reliable)
+    if (window.dialforgeActiveCallData) {
+      contact = window.dialforgeActiveCallData.contact || {};
+      callData = window.dialforgeActiveCallData.callData || {};
+      direction = contact.direction || direction;
+    } else {
+      // Fallback to dialforgeLastCompletedCall if sync object not available
+      try {
+        const completedCallJSON = localStorage.getItem('dialforgeLastCompletedCall');
+        if (completedCallJSON) {
+          const completedCall = JSON.parse(completedCallJSON);
+          contact = completedCall.contact || {};
+          callData = completedCall.callData || {};
+          direction = contact.direction || direction;
+        }
+      } catch (e) {
+        console.error('Error reading dialforgeLastCompletedCall:', e);
+      }
+    }
+    
+    // Final fallback to CALL object if no other data available
+    if (!contact.name && CALL.caller) {
+      contact = CALL.caller;
+    }
+    
+    // Get duration: use callData.duration (in seconds) from completed call, fallback to CALL.elapsedSeconds
+    const duration = (callData.duration !== undefined && callData.duration > 0) 
+      ? callData.duration 
+      : CALL.elapsedSeconds;
+    
     const now = new Date();
-    const duration = CALL.elapsedSeconds;
     
     const entry = {
       id: `call_${Date.now()}`,
-      type: CALL.direction === 'outbound' ? 'Outbound' : 'Inbound',
-      icon: CALL.direction === 'outbound' ? 'call_made' : 'call_received',
-      iconColor: CALL.direction === 'outbound' ? 'text-tertiary' : 'text-fire-accent',
-      name: CALL.caller?.name || 'Unknown Contact',
-      company: CALL.caller?.company || 'N/A',
-      number: CALL.caller?.number || 'N/A',
+            type: direction === 'outbound' ? 'Outbound' : 'Inbound',
+      icon: direction === 'outbound' ? 'call_made' : 'call_received',
+      iconColor: direction === 'outbound' ? 'text-tertiary' : 'text-fire-accent',
+      name: contact.name || 'Unknown Contact',
+      company: contact.company || 'N/A',
+      number: contact.number || 'N/A',
+      email: contact.email || '',
+      avatar: contact.avatar || '', // Include avatar from contact data
       status: 'COMPLETED',
       statusClasses: 'bg-tertiary/10 text-tertiary border border-tertiary/20',
       duration: formatTime(duration),
@@ -1736,7 +1853,8 @@ Complete Call
       revenue: '$0',
       revenueClasses: 'text-on-surface-variant/40',
       timestamp: now.toISOString(),
-      dateLabel: now.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+      dateLabel: now.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
+      direction: direction // Store direction for reference
     };
 
     return entry;
@@ -1935,8 +2053,186 @@ Complete Call
       });
     }
 
+// ========== ZENDESK TICKET MODAL ==========
+    const zendeskModal = document.getElementById('zendeskTicketModal');
+    const openZendeskBtn = document.getElementById('openZendeskModalBtn');
+    const closeZendeskBtn = document.getElementById('closeZendeskModalBtn');
+    const cancelZendeskBtn = document.getElementById('cancelZendeskBtn');
+    const submitZendeskBtn = document.getElementById('submitZendeskBtn');
 
+    if (openZendeskBtn) {
+      openZendeskBtn.addEventListener('click', () => {
+        // Pre-fill ticket data from current call
+        const aiSummaryElement = document.getElementById('aiSummary');
+        const finalNotesInput = document.getElementById('finalNotesInput');
+        
+        const ticketPayload = postCallAPI.buildZendeskTicketPayload({
+          disposition: 'Connected',
+          summary: aiSummaryElement ? aiSummaryElement.textContent : '',
+          notes: finalNotesInput ? finalNotesInput.value : '',
+          callerPhone: CALL.caller?.number || '',
+          callerName: CALL.caller?.name || '',
+          callerCompany: CALL.caller?.company || '',
+          duration: CALL.elapsedSeconds || 0
+        });
+        
+        document.getElementById('ticketSubject').value = ticketPayload.subject;
+        document.getElementById('ticketDescription').value = ticketPayload.description;
+        document.getElementById('ticketPriority').value = ticketPayload.priority;
+        document.getElementById('ticketCallerDisplay').textContent = `${CALL.caller?.name || 'Unknown'} (${CALL.caller?.number || 'No phone'})`;
+        
+        zendeskModal.classList.remove('hidden');
+      });
+    }
 
+    if (closeZendeskBtn) {
+      closeZendeskBtn.addEventListener('click', () => zendeskModal.classList.add('hidden'));
+    }
+
+    if (cancelZendeskBtn) {
+      cancelZendeskBtn.addEventListener('click', () => zendeskModal.classList.add('hidden'));
+    }
+
+    if (submitZendeskBtn) {
+      submitZendeskBtn.addEventListener('click', async () => {
+        submitZendeskBtn.disabled = true;
+        const originalText = submitZendeskBtn.textContent;
+        submitZendeskBtn.textContent = 'Creating Ticket...';
+        
+        const ticketData = {
+          subject: document.getElementById('ticketSubject').value,
+          description: document.getElementById('ticketDescription').value,
+          priority: document.getElementById('ticketPriority').value,
+          requester_phone: CALL.caller?.number || '',
+          caller_name: CALL.caller?.name,
+          caller_company: CALL.caller?.company,
+          disposition: 'Connected',
+          call_duration: CALL.elapsedSeconds
+        };
+        
+        const result = await postCallAPI.createZendeskTicket(ticketData);
+        
+        if (result) {
+          showToast(`Ticket created: ${result.ticketId}`, 'success');
+          zendeskModal.classList.add('hidden');
+          // Reset form
+          document.getElementById('ticketSubject').value = '';
+          document.getElementById('ticketDescription').value = '';
+          document.getElementById('ticketPriority').value = 'normal';
+          submitZendeskBtn.textContent = originalText;
+          submitZendeskBtn.disabled = false;
+        } else {
+          showToast('Failed to create ticket', 'error');
+          submitZendeskBtn.textContent = originalText;
+          submitZendeskBtn.disabled = false;
+        }
+      });
+    }
+
+    // ========== ZAPIER QUICK ACTIONS ==========
+    const sendToSlackBtn = document.getElementById('sendToSlackBtn');
+    const triggerFollowupBtn = document.getElementById('triggerFollowupBtn');
+
+    if (sendToSlackBtn) {
+      sendToSlackBtn.addEventListener('click', async () => {
+        sendToSlackBtn.disabled = true;
+        const originalText = sendToSlackBtn.textContent;
+        sendToSlackBtn.textContent = 'Sending...';
+        
+        const aiSummaryElement = document.getElementById('aiSummary');
+        const finalNotesInput = document.getElementById('finalNotesInput');
+        
+        const workflowData = {
+          event: 'send_to_slack',
+          duration: CALL.elapsedSeconds,
+          callerName: CALL.caller?.name,
+          callerPhone: CALL.caller?.number,
+          callerEmail: CALL.caller?.email || '',
+          callerCompany: CALL.caller?.company,
+          disposition: 'Connected',
+          aiSummary: aiSummaryElement ? aiSummaryElement.textContent : '',
+          notes: finalNotesInput ? finalNotesInput.value : '',
+          direction: CALL.direction
+        };
+        
+        const result = await postCallAPI.triggerZapierWorkflow(workflowData);
+        
+        if (result) {
+          showToast('Sent to Slack', 'success');
+        } else {
+          showToast('Failed to send to Slack', 'error');
+        }
+        
+        sendToSlackBtn.textContent = originalText;
+        sendToSlackBtn.disabled = false;
+      });
+    }
+
+    if (triggerFollowupBtn) {
+      triggerFollowupBtn.addEventListener('click', async () => {
+        triggerFollowupBtn.disabled = true;
+        const originalText = triggerFollowupBtn.textContent;
+        triggerFollowupBtn.textContent = 'Triggering...';
+        
+        const aiSummaryElement = document.getElementById('aiSummary');
+        const finalNotesInput = document.getElementById('finalNotesInput');
+        
+        const workflowData = {
+          event: 'trigger_followup_workflow',
+          duration: CALL.elapsedSeconds,
+          callerName: CALL.caller?.name,
+          callerPhone: CALL.caller?.number,
+          callerCompany: CALL.caller?.company,
+          disposition: 'Connected',
+          aiSummary: aiSummaryElement ? aiSummaryElement.textContent : '',
+          notes: finalNotesInput ? finalNotesInput.value : '',
+          direction: CALL.direction
+        };
+        
+        const result = await postCallAPI.triggerZapierWorkflow(workflowData);
+        
+        if (result) {
+          showToast('Follow-up workflow triggered', 'success');
+        } else {
+          showToast('Failed to trigger workflow', 'error');
+        }
+        
+        triggerFollowupBtn.textContent = originalText;
+        triggerFollowupBtn.disabled = false;
+      });
+    }
+
+    // ========== HUBSPOT SYNC INTEGRATION ==========
+    // Modify saveDraftBtn handler to also sync to HubSpot
+    const modifiedSaveDraftBtn = document.getElementById('saveDraftBtn');
+    if (modifiedSaveDraftBtn && typeof postCallAPI !== 'undefined') {
+      // Store original handler
+      const originalClickHandler = modifiedSaveDraftBtn.onclick;
+      
+      // Enhance with HubSpot sync
+      modifiedSaveDraftBtn.addEventListener('click', async function(e) {
+        // Existing save logic runs first
+        const finalNotesInput = document.getElementById('finalNotesInput');
+        const finalNotes = finalNotesInput ? finalNotesInput.value : '';
+        
+        // Also sync to HubSpot if available
+        if (CALL.caller?.number) {
+          const syncResult = await postCallAPI.updateHubSpotContact({
+            email: CALL.caller?.email || '',
+            phone: CALL.caller?.number,
+            disposition: 'Connected',
+            lifecycleStage: 'opportunity',
+            lastCallDate: new Date().toISOString(),
+            callNotes: finalNotes,
+            callerName: CALL.caller?.name
+          });
+          
+          if (syncResult?.synced) {
+            console.log('[Post Call] HubSpot contact updated');
+          }
+        }
+      });
+    }
 
     // Schedule Follow-up Button - Opens Task Modal
     const scheduleFollowupBtn = document.getElementById('scheduleFollowupBtn');
@@ -2760,8 +3056,8 @@ Best regards,`;
 <script data-purpose="post-call-summary-sync">
 (function() {
   // Load completed call data from localStorage (set by activeCall.html endCall() function)
-	  function syncCompletedCallData() {
-	    const completedCallJSON = localStorage.getItem('dialforgeLastCompletedCall');
+  function syncCompletedCallData() {
+    const completedCallJSON = localStorage.getItem('dialforgeLastCompletedCall');
     
     if (!completedCallJSON) {
       // No call data available, use defaults
@@ -2876,10 +3172,10 @@ Best regards,`;
       };
       
     } catch (e) {
-	      console.error('Error syncing completed call data:', e);
-	    }
-	  }
-
+      console.error('Error syncing completed call data:', e);
+    }
+  }
+  
 	  function escapeSummaryText(value) {
 	    const div = document.createElement('div');
 	    div.textContent = value == null ? '' : String(value);
@@ -2934,8 +3230,8 @@ Best regards,`;
 	    button?.addEventListener('click', renderPostCallAISummary);
 	  }
 	  
-	  // ---- DRAFT RESTORATION FUNCTION ----
-	  // Restore previously saved draft when page loads
+  // ---- DRAFT RESTORATION FUNCTION ----
+  // Restore previously saved draft when page loads
   function restoreDraft() {
     try {
       const draftJSON = localStorage.getItem('dialforgeCallDraft');
@@ -2990,24 +3286,24 @@ Best regards,`;
   });
   
   // Sync and restore on page load
-	  document.addEventListener('DOMContentLoaded', function() {
-	    syncCompletedCallData();
-	    restoreDraft();
+  document.addEventListener('DOMContentLoaded', function() {
+    syncCompletedCallData();
+    restoreDraft();
 	    setupPostCallAISummaryButton();
-	  });
+  });
   
   // Also attempt sync immediately if DOM is already loaded
   if (document.readyState === 'loading') {
-	    document.addEventListener('DOMContentLoaded', function() {
-	      syncCompletedCallData();
-	      restoreDraft();
+    document.addEventListener('DOMContentLoaded', function() {
+      syncCompletedCallData();
+      restoreDraft();
 	      setupPostCallAISummaryButton();
-	    });
-	  } else {
-	    syncCompletedCallData();
-	    restoreDraft();
+    });
+  } else {
+    syncCompletedCallData();
+    restoreDraft();
 	    setupPostCallAISummaryButton();
-	  }
+  }
 })();
 </script>
 <!-- END: Post-Call Summary Synchronization Script -->

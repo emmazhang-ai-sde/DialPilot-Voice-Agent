@@ -560,11 +560,11 @@
     <span class="material-symbols-outlined">call</span>
     <span class="text-[8px] uppercase font-bold">Call</span>
   </a>
-  <a href="./supportQueue_x" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
+  <a href="./supportQueue.html" class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
     <span class="material-symbols-outlined">queue</span>
     <span class="text-[8px] uppercase font-bold">Queue</span>
   </a>
-  <a href="./callHistory" class="block w-full">
+  <a href="./callCoaching.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">graphic_eq</span>
       <span class="text-[8px] uppercase font-bold">Coaching</span>
@@ -1710,6 +1710,10 @@ Upgrade to Enterprise
     })();
   </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/securitySSOAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
   
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">
@@ -1920,6 +1924,199 @@ Upgrade to Enterprise
 <!-- END: DialPad Module -->
 
 <!-- BEGIN: Saved Profile Picture Sync -->
+<!-- BEGIN: Security & SSO API Integration -->
+<script>
+  /* ============================================================
+     SECURITY & SSO API INTEGRATION
+  ============================================================ */
+
+  /**
+   * Load and display tool information
+   */
+  async function loadToolInformation() {
+    if (typeof securitySSOAPI === 'undefined') {
+      console.warn('[Security SSO] securitySSOAPI not available');
+      return;
+    }
+
+    try {
+      // Fetch tool information
+      const tools = await securitySSOAPI.getToolInformation();
+
+      console.log('[Security SSO] Tool information loaded:', tools);
+
+      // Process each tool and update UI if needed
+      if (Array.isArray(tools) && tools.length > 0) {
+        tools.forEach(tool => {
+          handleToolStatus(tool);
+        });
+      }
+    } catch (error) {
+      console.error('[Security SSO] Error loading tool information:', error);
+    }
+  }
+
+  /**
+   * Handle tool status display
+   */
+  function handleToolStatus(tool) {
+    if (!tool || !tool.name) return;
+
+    const toolName = tool.name.toLowerCase();
+    const status = tool.status || 'UNKNOWN';
+
+    console.log(`[Security SSO] Tool: ${toolName}, Status: ${status}`);
+
+    // If tool requires reauthorization, show reconnect button
+    if (status === 'REQUIRES_REAUTHORIZATION') {
+      showReconnectButton(toolName, tool.oauth_url || tool.oauthUrl);
+    }
+  }
+
+  /**
+   * Show reconnect integration button
+   */
+  function showReconnectButton(toolName, oauthUrl) {
+    if (!oauthUrl) {
+      console.warn(`[Security SSO] No OAuth URL for ${toolName}`);
+      return;
+    }
+
+    // Create reconnect button
+    const button = document.createElement('button');
+    button.className = 'flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary/10 border border-secondary/30 text-secondary font-bold text-sm hover:bg-secondary/20 transition-all';
+    button.textContent = '↻ Reconnect Integration';
+    button.onclick = () => {
+      console.log(`[Security SSO] Redirecting to OAuth URL for ${toolName}`);
+      window.location.href = oauthUrl;
+    };
+
+    // Find or create a container for reconnect actions
+    // This would need to be customized based on the actual page structure
+    console.log(`[Security SSO] Reconnect button ready for ${toolName}`);
+  }
+
+  /**
+   * Load and apply local security preferences
+   */
+  function loadLocalSecurityPreferences() {
+    if (typeof securitySSOAPI === 'undefined') {
+      console.warn('[Security SSO] securitySSOAPI not available');
+      return;
+    }
+
+    try {
+      const preferences = securitySSOAPI.getLocalSecurityPreferences();
+
+      // Apply session timeout preference
+      const sessionTimeoutSelect = document.getElementById('sessionTimeout');
+      if (sessionTimeoutSelect && preferences.sessionTimeout) {
+        sessionTimeoutSelect.value = preferences.sessionTimeout;
+      }
+
+      // Apply 2FA enforcement preference
+      const twoFactorToggle = document.getElementById('twoFactor');
+      if (twoFactorToggle && typeof preferences.twoFactorEnforced === 'boolean') {
+        twoFactorToggle.checked = preferences.twoFactorEnforced;
+      }
+
+      // Apply IP whitelist preference
+      const ipWhitelistToggle = document.getElementById('ipWhitelist');
+      if (ipWhitelistToggle && typeof preferences.ipWhitelistEnabled === 'boolean') {
+        ipWhitelistToggle.checked = preferences.ipWhitelistEnabled;
+      }
+
+      // Apply audit logs preference
+      const auditLogsToggle = document.getElementById('auditLogs');
+      if (auditLogsToggle && typeof preferences.auditLogsEnabled === 'boolean') {
+        auditLogsToggle.checked = preferences.auditLogsEnabled;
+      }
+
+      console.log('[Security SSO] Local preferences loaded:', preferences);
+    } catch (error) {
+      console.error('[Security SSO] Error loading preferences:', error);
+    }
+  }
+
+  /**
+   * Save local security preferences
+   */
+  function saveLocalSecurityPreferences() {
+    if (typeof securitySSOAPI === 'undefined') {
+      console.warn('[Security SSO] securitySSOAPI not available');
+      return;
+    }
+
+    try {
+      const sessionTimeoutSelect = document.getElementById('sessionTimeout');
+      const twoFactorToggle = document.getElementById('twoFactor');
+      const ipWhitelistToggle = document.getElementById('ipWhitelist');
+      const auditLogsToggle = document.getElementById('auditLogs');
+
+      const preferences = {
+        sessionTimeout: sessionTimeoutSelect?.value ? parseInt(sessionTimeoutSelect.value) : 30,
+        twoFactorEnforced: twoFactorToggle?.checked === true,
+        ipWhitelistEnabled: ipWhitelistToggle?.checked === true,
+        auditLogsEnabled: auditLogsToggle?.checked === true
+      };
+
+      const result = securitySSOAPI.saveLocalSecurityPreferences(preferences);
+
+      if (result.success) {
+        console.log('[Security SSO] Local preferences saved');
+      } else {
+        console.error('[Security SSO] Error saving preferences:', result.message);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('[Security SSO] Error saving preferences:', error);
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * Initialize security toggles to save on change
+   */
+  function initSecurityToggleListeners() {
+    const toggles = ['twoFactor', 'ipWhitelist', 'auditLogs'];
+    
+    toggles.forEach(id => {
+      const element = document.getElementById(id);
+      if (element && !element.disabled) {
+        element.addEventListener('change', () => {
+          saveLocalSecurityPreferences();
+        });
+      }
+    });
+
+    const sessionTimeoutSelect = document.getElementById('sessionTimeout');
+    if (sessionTimeoutSelect && !sessionTimeoutSelect.disabled) {
+      sessionTimeoutSelect.addEventListener('change', () => {
+        saveLocalSecurityPreferences();
+      });
+    }
+  }
+
+  /**
+   * Initialize on DOM ready
+   */
+  document.addEventListener('DOMContentLoaded', () => {
+    // Load tool information from backend
+    loadToolInformation();
+
+    // Load local security preferences
+    loadLocalSecurityPreferences();
+
+    // Set up toggle listeners
+    initSecurityToggleListeners();
+  });
+</script>
+<!-- END: Security & SSO API Integration -->
+
 <script>
   /* ---------- Saved Profile Picture (shared with profile.html) ---------- */
   function loadSavedProfileAvatar() {

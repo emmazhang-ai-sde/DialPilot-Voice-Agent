@@ -1427,6 +1427,11 @@
     })();
   </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/settingsGeneralAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
+
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">
 // DialPad Module
@@ -1625,6 +1630,107 @@
     }
   };
 
+  // Initialize the app when DOM is ready
+  document.addEventListener('DOMContentLoaded', () => {
+    DialPad.attachKeyboardShortcut();
+  });
+
+  // Make DialPad globally accessible
+  window.DialPad = DialPad;
+</script>
+<!-- END: DialPad Module -->
+
+
+
+<!-- BEGIN: Settings General API Integration -->
+<script>
+  /* ============================================================
+     GENERAL SETTINGS API INTEGRATION
+  ============================================================ */
+
+  /**
+   * Load and display account metadata
+   */
+  async function loadAccountMetadata() {
+    if (typeof settingsGeneralAPI === 'undefined') {
+      console.warn('[Settings General] settingsGeneralAPI not available');
+      return;
+    }
+
+    try {
+      // Fetch account metadata
+      const metadata = await settingsGeneralAPI.getAccountMetadata();
+
+      // Normalize the response
+      const normalized = settingsGeneralAPI.normalizeAccountMetadata(metadata);
+
+      // Update UI with actual values or show "-" if not available
+      const accountIdEl = document.getElementById('accountIdValue');
+      const companyNameEl = document.getElementById('companyNameValue');
+      const timezoneEl = document.getElementById('accountTimezoneValue');
+      const currencyEl = document.getElementById('primaryCurrencyValue');
+
+      if (accountIdEl) accountIdEl.textContent = normalized.accountId || '-';
+      if (companyNameEl) companyNameEl.textContent = normalized.companyName || '-';
+      if (timezoneEl) timezoneEl.textContent = normalized.timezone || '-';
+      if (currencyEl) currencyEl.textContent = normalized.currency || '-';
+
+      console.log('[Settings General] Account metadata loaded');
+    } catch (error) {
+      console.error('[Settings General] Error loading account metadata:', error);
+    }
+  }
+
+  /**
+   * Load and display user profile
+   */
+  async function loadUserProfile() {
+    if (typeof settingsGeneralAPI === 'undefined') {
+      console.warn('[Settings General] settingsGeneralAPI not available');
+      return;
+    }
+
+    try {
+      // Fetch user profile
+      const profile = await settingsGeneralAPI.getUserProfile();
+
+      // Normalize the response
+      const normalized = settingsGeneralAPI.normalizeUserProfile(profile);
+
+      // Update UI with actual values or show "-" if not available
+      const displayNameEl = document.getElementById('displayNameValue');
+      const emailEl = document.getElementById('emailValue');
+      const userIdEl = document.getElementById('userIdValue');
+
+      if (displayNameEl) displayNameEl.textContent = normalized.displayName || '-';
+      if (emailEl) emailEl.textContent = normalized.email || '-';
+      if (userIdEl) userIdEl.textContent = normalized.userId || '-';
+
+      console.log('[Settings General] User profile loaded');
+    } catch (error) {
+      console.error('[Settings General] Error loading user profile:', error);
+    }
+  }
+
+  /* ============================================================
+     INITIALIZATION
+  ============================================================ */
+
+  // Load account and user data when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAccountMetadata();
+      loadUserProfile();
+    });
+  } else {
+    loadAccountMetadata();
+    loadUserProfile();
+  }
+</script>
+<!-- END: Settings General API Integration -->
+
+<!-- BEGIN: DialPad Module -->
+<script>
   // Initialize the app when DOM is ready
   document.addEventListener('DOMContentLoaded', () => {
     DialPad.attachKeyboardShortcut();

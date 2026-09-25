@@ -171,7 +171,6 @@
 </div>
 </div>
 </div>
-</div>
 <!-- Pricing Note Box -->
 <div class="mt-12 p-5 rounded-2xl bg-fire-accent/5 border border-fire-accent/10">
 <div class="flex items-center gap-2 text-fire-accent mb-2">
@@ -657,6 +656,7 @@
 
   /**
    * Preserve selection feedback on number card selection
+   * AND SYNC TO NUMBERS PAGE PERSISTENCE
    */
   const radios = document.querySelectorAll('input[name="number_select"]');
   const reserveBtn = document.querySelector('.liquid-button');
@@ -667,9 +667,30 @@
       const selectedCard = document.querySelector('.number-card input[name="number_select"]:checked')?.closest('.number-card');
       if (selectedCard) {
         const selectedPhone = selectedCard.getAttribute('data-phone');
+                const selectedCountry = selectedCard.getAttribute('data-country');
+        const selectedAreaCode = selectedCard.getAttribute('data-area-code');
+        
+        // Save to existing appState for compatibility
         appState.onboarding.phoneNumber = selectedPhone;
         saveState();
-        console.log('Phone number saved:', selectedPhone);
+        
+        // SYNC TO NUMBERS PAGE: Create a structure for Numbers page to load
+        // This saves the selected number in a format the Numbers page can easily consume
+        try {
+          const onboardingNumbers = {
+            selected: {
+              phone: selectedPhone,
+              country: selectedCountry,
+              areaCode: selectedAreaCode,
+              label: `${selectedCountry} - ${selectedAreaCode}`,
+              timestamp: Date.now()
+            }
+          };
+          localStorage.setItem('dialforgeOnboardingNumbers', JSON.stringify(onboardingNumbers));
+          console.log('Onboarding number synced for Numbers page:', onboardingNumbers);
+        } catch (e) {
+          console.log('Could not sync to Numbers page:', e);
+        }
       }
 
       // Visual pop animation for the button when a new selection is made

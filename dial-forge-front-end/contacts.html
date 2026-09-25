@@ -141,6 +141,31 @@
       border-radius: 10px;
     }
 
+    .dial-pad-btn {
+      padding: 0.75rem;
+      background-color: rgb(30, 31, 39);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.5rem;
+      color: #e3e1ec;
+      font-family: "DM Sans";
+      font-weight: 700;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .dial-pad-btn:hover {
+      background-color: rgb(41, 41, 50);
+      border-color: rgba(255, 122, 28, 0.4);
+      color: #ffb4a2;
+    }
+    .dial-pad-btn:focus-visible {
+      outline: 2px solid #FF7A1C;
+      outline-offset: 2px;
+    }
+    .dial-pad-btn:active {
+      transform: scale(0.95);
+    }
+
     /* Focus styles for accessibility */
     button:focus-visible,
     a:focus-visible,
@@ -230,7 +255,100 @@
   </script>
 </head>
 <body class="bg-background text-on-surface font-dm-sans antialiased overflow-hidden select-none">
+<!-- BEGIN: API Integration Scripts -->
+<script src="./APIintegration/dialforgeAPI.js"></script>
+<script src="./APIintegration/crmAPI.js"></script>
+<script src="./APIintegration/contactsAPI.js"></script>
+<!-- END: API Integration Scripts -->
 <div class="noise-overlay"></div>
+
+<!-- BEGIN: DialPad Modal -->
+<div id="dialPadOverlay" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+  <div class="modal-in glass-card fire-glow w-full max-w-sm rounded-2xl p-8 flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <span class="text-[10px] font-extrabold text-tertiary uppercase tracking-widest">Dial Pad</span>
+      <button id="dialPadCloseBtn" class="text-on-surface-variant/60 hover:text-white transition-colors" aria-label="Close dial pad modal">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+
+    <!-- Phone Number Display -->
+    <div class="mb-6">
+      <input 
+        id="dialPadDisplay" 
+        type="text" 
+        placeholder="Enter number" 
+        class="w-full px-4 py-4 bg-surface-container-low rounded-lg border border-white/10 text-white font-mono-data text-2xl text-center tracking-widest focus:outline-none focus:border-tertiary transition-colors placeholder-on-surface-variant/30"
+        inputmode="none"
+        autocomplete="off"
+        aria-label="Phone number input"
+      >
+    </div>
+
+    <!-- Number Pad Grid -->
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      <!-- Row 1: 1 2 3 -->
+      <button class="dial-pad-btn" data-digit="1" aria-label="1">1</button>
+      <button class="dial-pad-btn" data-digit="2" aria-label="2">2</button>
+      <button class="dial-pad-btn" data-digit="3" aria-label="3">3</button>
+      
+      <!-- Row 2: 4 5 6 -->
+      <button class="dial-pad-btn" data-digit="4" aria-label="4">4</button>
+      <button class="dial-pad-btn" data-digit="5" aria-label="5">5</button>
+      <button class="dial-pad-btn" data-digit="6" aria-label="6">6</button>
+      
+      <!-- Row 3: 7 8 9 -->
+      <button class="dial-pad-btn" data-digit="7" aria-label="7">7</button>
+      <button class="dial-pad-btn" data-digit="8" aria-label="8">8</button>
+      <button class="dial-pad-btn" data-digit="9" aria-label="9">9</button>
+      
+      <!-- Row 4: * 0 # -->
+      <button class="dial-pad-btn" data-digit="*" aria-label="Star">*</button>
+      <button class="dial-pad-btn" data-digit="0" aria-label="0">0</button>
+      <button class="dial-pad-btn" data-digit="#" aria-label="Hash">#</button>
+    </div>
+
+    <!-- Control Buttons Row -->
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      <!-- Delete Button -->
+      <button 
+        id="dialPadDeleteBtn" 
+        class="py-3 px-4 bg-surface-container-low hover:bg-surface-container-high border border-white/10 hover:border-fire-accent/40 rounded-lg text-on-surface-variant/80 hover:text-fire-accent transition-all font-button-text font-bold text-sm flex items-center justify-center gap-1"
+        aria-label="Delete last digit"
+      >
+        <span class="material-symbols-outlined text-lg">backspace</span>
+      </button>
+      
+      <!-- Plus Button -->
+      <button class="dial-pad-btn" data-digit="+" aria-label="Plus">+</button>
+      
+      <!-- Clear Button -->
+      <button 
+        id="dialPadClearBtn" 
+        class="py-3 px-4 bg-surface-container-low hover:bg-surface-container-high border border-white/10 hover:border-error-red/40 rounded-lg text-on-surface-variant/80 hover:text-error-red transition-all font-button-text font-bold text-sm"
+        aria-label="Clear all digits"
+      >
+        Clear
+      </button>
+    </div>
+
+    <!-- Call Now Button -->
+    <button 
+      id="dialPadCallNowBtn" 
+      class="w-full py-3 px-4 bg-fire-gradient hover:bg-fire-accent text-on-primary font-button-text font-bold text-sm rounded-lg transition-all duration-200 hover:shadow-lg active:scale-95"
+      disabled
+      aria-label="Call now"
+    >
+      <span class="flex items-center justify-center gap-2">
+        <span class="material-symbols-outlined">call</span>
+        <span>Call Now</span>
+      </span>
+    </button>
+  </div>
+</div>
+<!-- END: DialPad Modal -->
+
 <!-- BEGIN: MainHeader -->
 <header class="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-6 h-16">
 <div class="flex items-center gap-8">
@@ -352,7 +470,7 @@
   <a href="./notifications.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all">
       <span class="material-symbols-outlined">notifications</span>
-      <span class="text-[8px] uppercase font-bold">Notif</span>
+      <span class="text-[8px] uppercase font-bold">Notifs</span>
     </button>
   </a>
  
@@ -377,7 +495,7 @@
       <span class="ringing-pulse"></span>
       <span class="ringing-pulse delay-1"></span>
       <span class="ringing-pulse delay-2"></span>
-      <img id="incomingCallAvatar" alt="Caller avatar" class="relative w-24 h-24 rounded-full object-cover border-2 border-tertiary z-10" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_DdAsNbclbtQivfDDS1oGl1ujagTG3xDVXbbI_qwrNWnOrs7-Fnc0eShFfysAH2Od0Z8NsUdwmWCUbew9sayCtd1vN4M3WdbktIbrfzqqxMRHbtHy-Lpr4O7HqgwyKM9zydmudASEz5OFnc6pevFhd3QTVaY3prWde8rgO8FWT8w8aJ6GrLn2FoY-RvjhI6IVOjVwRGRkoL8tFXqnpMFYLqGBeclrDUtk18smquV7rVQC0-yrNwJ6qPKARRTOgW3ojtGKGjkZHxE">
+      <div id="incomingCallAvatar" class="relative w-24 h-24 rounded-full border-2 border-tertiary z-10 flex items-center justify-center bg-surface-container-highest shrink-0 text-white font-bold text-sm"></div>
     </div>
     <span id="incomingCallName" class="font-section-header text-xl text-white mb-1">Jordan Blake</span>
     <span id="incomingCallCompany" class="text-xs font-bold text-on-surface-variant/60 mb-1">Meridian Capital Partners</span>
@@ -587,7 +705,7 @@
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label for="leadModalContact" class="block text-[10px] font-extrabold uppercase tracking-[0.3em] text-on-surface-variant/70 mb-2">Contact</label>
-          <input id="leadModalContact" type="text" class="w-full rounded-2xl border border-white/10 bg-surface-container-lowest/70 px-4 py-3 text-sm text-white outline-none placeholder:text-on-surface-variant/40 focus:border-fire-accent" placeholder="e.g. Alex Rivera" />
+          <input id="leadModalContact" type="text" class="w-full rounded-2xl border border-white/10 bg-surface-container-lowest/70 px-4 py-3 text-sm text-white outline-none placeholder:text-on-surface-variant/40 focus:border-fire-accent" placeholder="e.g. Alex Rivers" />
         </div>
         <div>
           <label for="leadModalCompany" class="block text-[10px] font-extrabold uppercase tracking-[0.3em] text-on-surface-variant/70 mb-2">Company</label>
@@ -832,87 +950,11 @@ Sync Now
 <script data-purpose="app-logic">
 /* ===================== DialForge Contacts — App Logic ===================== */
 
-let contacts = [
-  {
-    id: 1,
-    name: "Alex Rivera",
-    title: "VP of Growth",
-    company: "Scale.io",
-    avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuD4KTM-SG00SVoLnUzz4KX5y9C9sQ9GzYpf3ocbgY9H9vTTnGRnmDjFj3FSUGTgZHbWBoiedqTWFOa6jNTsg25z8TpyzkPM1LIzjFZ-uQ7A9z8dzqpfip29IeTFx9vRp5zX4suFmbJ37jyK1Uc-aijLUpBgNHnoLhHGNeoit4aHvGtBOnof7HL-VNeUF13vWICXQ10pdG3PaT92w4nYULmz74g08ofy5-tppdhrawSIs3Uomk2SfYtzCgvwObcMdnlgYGD4OI1bOm4",
-    status: "hot",
-    dealValue: 24000,
-    dealStage: "Discovery",
-    dealProgress: 25,
-    callCount: 7,
-    email: "",
-    phone: "",
-    linkedin: "linkedin.com/in/alex-rivera-growth",
-    bio: "Currently scaling growth operations at Scale.io. Previously led customer acquisition at FlowState. Expert in GTM strategy and outbound automation.",
-    tags: ["Decision Maker", "Tech Focus", "Q4 Budget"],
-    calls: [
-      { type: "missed", title: "Missed call", label: "from DialForge", time: "Yesterday at 4:15 PM" },
-      { type: "ai", title: "AI Smart Research complete", label: "Identified expansion intent", time: "2 days ago" }
-    ]
-  },
-  {
-    id: 2,
-    name: "Marcus Reed",
-    title: "CTO",
-    company: "Vertex Digital",
-    avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuAt-YAPxoLVK_QMfMbNudkD-dnVDGYQCmsB_PXEb1UOEwN4_hOzk6YhWMoR02ahQcVqlvpcNEyJ0gSQ__CKEv6Gn0ZTHPGUMQR9LA-lUFrVmV5B4NccHf-GOJ0vjpfx2b7ef9uNCIjkPcSwCkQ80HCBRoDxmes8sPTO5pgl9nCkPdqtSGetHSCLMlc5z1qaww0Xlnausv46Be2YFbT0KBWZS3vdyPIk7MVE8UOWwIJXhDuTe3r5wiofKI6ejGhj60Y7FVyvfWV8umU",
-    status: "warm",
-    dealValue: 8500,
-    dealStage: "Proposal",
-    dealProgress: 55,
-    callCount: 3,
-    email: "marcus@vertexdigital.com",
-    phone: "+1 (415) 555-0132",
-    linkedin: "",
-    bio: "Technical decision maker at Vertex Digital, evaluating outbound tooling to support a growing SDR team.",
-    tags: ["Technical Buyer"],
-    calls: [
-      { type: "call", title: "Discovery call completed", label: "32 min • positive sentiment", time: "3 days ago" }
-    ]
-  },
-  {
-    id: 3,
-    name: "Sophia Patel",
-    title: "Director",
-    company: "OmniMedia",
-    avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuCCk7sxP2Qo72vt4wJimUQ332sEs7BF1Mp2SrQ0ra7N1eLGn6Y7m7JfUs2J4UHcgJEVWL0zisSYZWlJs8jE4RpiCoC-u4W-klFsAgLu5MJj8tnsBVp23CEuYnNumq_n2XR2mKeOkCBzjU59uaa99J48UjtvnoziRtUskpvlv3JUkZy_XhO36--K1GI24wjj9_73k-WO75efg7TXyskCTq3KYJGENbXaUh2pqgtwJRFlvtgD6N8L3I3E5qnNL1JNKi2Aw5dGKbfCTZw",
-    status: "cold",
-    dealValue: 0,
-    dealStage: "",
-    dealProgress: 0,
-    callCount: 1,
-    email: "",
-    phone: "+1 (312) 555-0199",
-    linkedin: "",
-    bio: "Oversees media buying operations at OmniMedia. Early-stage conversation, no active deal yet.",
-    tags: [],
-    calls: [
-      { type: "missed", title: "Missed call", label: "voicemail left", time: "1 week ago" }
-    ]
-  },
-  {
-    id: 4,
-    name: "Jordan Davis",
-    title: "Founder",
-    company: "Stealth Co",
-    avatarUrl: "",
-    status: "cold",
-    dealValue: 0,
-    dealStage: "",
-    dealProgress: 0,
-    callCount: 0,
-    email: "",
-    phone: "",
-    linkedin: "",
-    bio: "",
-    tags: [],
-    calls: []
-  }
-];
+// Loading state
+let isLoadingContacts = false;
+let contactsLoadError = null;
+
+let contacts = [];  // Will be loaded from API
 
 let selectedId = 1;
 let viewMode = "list";      // "list" | "grid"
@@ -1101,6 +1143,9 @@ function renderDetail() {
     </div>
     <div class="flex gap-2 flex-wrap">
       ${missing.map(m => `<button class="add-missing-btn bg-ember-alert text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-ember-alert/80 transition-all" data-field="${m.key}">Add ${m.label}</button>`).join("")}
+      <button class="enrich-apollo-btn bg-ai-purple text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-ai-purple/80 transition-all" id="enrichBtn">
+        <span class="material-symbols-outlined" style="display: inline-block; font-size: 14px; vertical-align: middle; margin-right: 4px;">auto_awesome</span>Enrich
+      </button>
     </div>
   </div>` : "";
 
@@ -1138,6 +1183,7 @@ function renderDetail() {
         <div class="flex items-center gap-3 mb-1 flex-wrap">
           <h1 class="font-syne text-4xl font-extrabold">${escapeHtml(c.name)}</h1>
           <span class="px-3 py-1 rounded-full text-[10px] font-black ${meta.cls} border tracking-[0.2em]">${meta.label} LEAD</span>
+          ${c.isFromAPI ? `<span class="px-3 py-1 rounded-full text-[10px] font-black bg-tertiary/10 text-tertiary border border-tertiary/20 tracking-[0.2em]">✓ SYNCED</span>` : `<span class="px-3 py-1 rounded-full text-[10px] font-black bg-on-surface-variant/10 text-on-surface-variant border border-on-surface-variant/20 tracking-[0.2em]">⊖ LOCAL</span>`}
         </div>
         <p class="font-syne text-xl text-on-surface-variant font-medium">${escapeHtml(c.title || "No title on file")}${c.company ? ` at <span class="text-fire-accent">${escapeHtml(c.company)}</span>` : ""}</p>
         <div class="flex gap-2 mt-4 flex-wrap">
@@ -1255,6 +1301,12 @@ function wireDetailEvents(c) {
   container.querySelectorAll(".edit-field-btn").forEach(btn => {
     btn.addEventListener("click", () => startInlineEdit(c, btn.dataset.field));
   });
+  
+  // Apollo enrichment button
+  const enrichBtn = document.getElementById("enrichBtn");
+  if (enrichBtn) {
+    enrichBtn.addEventListener("click", () => enrichContact(c));
+  }
 
   document.getElementById("callActionBtn").addEventListener("click", () => startActiveCallForContact(c));
   document.getElementById("emailActionBtn").addEventListener("click", () => openEmailClient(c));
@@ -1328,6 +1380,62 @@ function logCall(c) {
   c.calls.unshift({ type: "call", title: "Outbound call logged", label: "via DialForge Dialer", time: "Just now" });
   renderDetail();
   renderList();
+}
+
+/**
+ * Enrich a contact using Apollo
+ * Shows loading state, fetches enrichment data, updates contact
+ */
+async function enrichContact(c) {
+  if (!c) return;
+  
+  // Check if contactsAPI is available
+  if (typeof contactsAPI === 'undefined') {
+    alert('Enrichment API not available');
+    return;
+  }
+
+  // Show loading state
+  const enrichBtn = document.getElementById("enrichBtn");
+  if (enrichBtn) {
+    enrichBtn.disabled = true;
+    enrichBtn.innerHTML = '<span class="material-symbols-outlined" style="display: inline-block; font-size: 14px; vertical-align: middle; margin-right: 4px;">hourglass_empty</span>Enriching...';
+  }
+
+  try {
+    // Call Apollo enrichment via API
+    const result = await contactsAPI.enrichContactWithApollo(c);
+
+    if (result.success && result.enrichedContact) {
+      // Update contact with enriched data
+      if (result.enrichedContact.email) c.email = result.enrichedContact.email;
+      if (result.enrichedContact.phone) c.phone = result.enrichedContact.phone;
+      if (result.enrichedContact.company) c.company = result.enrichedContact.company;
+      if (result.enrichedContact.title) c.title = result.enrichedContact.title;
+      if (result.enrichedContact.bio) c.bio = result.enrichedContact.bio;
+      
+      // Mark as enriched
+      c.enriched = true;
+
+      // Re-render to show updated data
+      renderDetail();
+      renderList();
+
+      // Show success
+      alert(`✓ ${c.name} enriched successfully!`);
+    } else {
+      alert(`Enrichment failed: ${result.message}`);
+    }
+  } catch (error) {
+    console.error('[Contacts] Error enriching contact:', error);
+    alert(`Error: ${error.message}`);
+  } finally {
+    // Restore button state
+    if (enrichBtn) {
+      enrichBtn.disabled = false;
+      enrichBtn.innerHTML = '<span class="material-symbols-outlined" style="display: inline-block; font-size: 14px; vertical-align: middle; margin-right: 4px;">auto_awesome</span>Enrich';
+    }
+  }
 }
 
 /* ------------------------- Call Button -> Active Call Sync ------------------------- */
@@ -1649,7 +1757,145 @@ function setStatusFilter(status) {
 
 /* ------------------------- Init ------------------------- */
 
-function init() {
+async function loadContactsFromAPI() {
+  isLoadingContacts = true;
+  contactsLoadError = null;
+
+  try {
+    // Check if contactsAPI is available
+    if (typeof contactsAPI === 'undefined') {
+      console.warn('[Contacts] contactsAPI not available, using demo data');
+      loadDemoContacts();
+      return;
+    }
+
+    // Fetch from HubSpot via API
+    const apiContacts = await contactsAPI.fetchContactsFromHubSpot();
+    
+    if (apiContacts && apiContacts.length > 0) {
+      contacts = apiContacts;
+      // Set selected to first contact
+      selectedId = contacts[0].id;
+      console.log('[Contacts] Loaded', contacts.length, 'contacts from HubSpot');
+    } else {
+      console.warn('[Contacts] No contacts from API, using demo data');
+      loadDemoContacts();
+    }
+  } catch (error) {
+    console.error('[Contacts] Error loading contacts from API:', error);
+    contactsLoadError = error.message;
+    loadDemoContacts(); // Fall back to demo data
+  } finally {
+    isLoadingContacts = false;
+  }
+}
+
+function loadDemoContacts() {
+  // Fallback demo contacts
+  contacts = [
+    {
+      id: 1,
+      hubspotId: 'demo-1',
+      name: "Alex Rivera",
+      firstName: "Alex",
+      lastName: "Rivera",
+      title: "VP of Growth",
+      company: "Scale.io",
+      avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuD4KTM-SG00SVoLnUzz4KX5y9C9sQ9GzYpf3ocbgY9H9vTTnGRnmDjFj3FSUGTgZHbWBoiedqTWFOa6jNTsg25z8TpyzkPM1LIzjFZ-uQ7A9z8dzqpfip29IeTFx9vRp5zX4suFmbJ37jyK1Uc-aijLUpBgNHnoLhHGNeoit4aHvGtBOnof7HL-VNeUF13vWICXQ10pdG3PaT92w4nYULmz74g08ofy5-tppdhrawSIs3Uomk2SfYtzCgvwObcMdnlgYGD4OI1bOm4",
+      status: "hot",
+      dealValue: 24000,
+      dealStage: "Discovery",
+      dealProgress: 25,
+      callCount: 7,
+      email: "",
+      phone: "",
+      linkedin: "linkedin.com/in/alex-rivera-growth",
+      bio: "Currently scaling growth operations at Scale.io. Previously led customer acquisition at FlowState. Expert in GTM strategy and outbound automation.",
+      tags: ["Decision Maker", "Tech Focus", "Q4 Budget"],
+      calls: [
+        { type: "missed", title: "Missed call", label: "from DialForge", time: "Yesterday at 4:15 PM" },
+        { type: "ai", title: "AI Smart Research complete", label: "Identified expansion intent", time: "2 days ago" }
+      ],
+      isFromAPI: false
+    },
+    {
+      id: 2,
+      hubspotId: 'demo-2',
+      name: "Marcus Thorne",
+      firstName: "Marcus",
+      lastName: "Thorne",
+      title: "CTO",
+      company: "Vertex Digital",
+      avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuAt-YAPxoLVK_QMfMbNudkD-dnVDGYQCmsB_PXEb1UOEwN4_hOzk6YhWMoR02ahQcVqlvpcNEyJ0gSQ__CKEv6Gn0ZTHPGUMQR9LA-lUFrVmV5B4NccHf-GOJ0vjpfx2b7ef9uNCIjkPcSwCkQ80HCBRoDxmes8sPTO5pgl9nCkPdqtSGetHSCLMlc5z1qaww0Xlnausv46Be2YFbT0KBWZS3vdyPIk7MVE8UOWwIJXhDuTe3r5wiofKI6ejGhj60Y7FVyvfWV8umU",
+      status: "warm",
+      dealValue: 8500,
+      dealStage: "Proposal",
+      dealProgress: 55,
+      callCount: 3,
+      email: "marcus@vertexdigital.com",
+      phone: "+1 (415) 555-0132",
+      linkedin: "",
+      bio: "Technical decision maker at Vertex Digital, evaluating outbound tooling to support a growing SDR team.",
+      tags: ["Technical Buyer"],
+      calls: [
+        { type: "call", title: "Discovery call completed", label: "32 min • positive sentiment", time: "3 days ago" }
+      ],
+      isFromAPI: false
+    },
+    {
+      id: 3,
+      hubspotId: 'demo-3',
+      name: "Sarah Chen",
+      firstName: "Sarah",
+      lastName: "Chen",
+      title: "Director",
+      company: "OmniMedia",
+      avatarUrl: "https://lh3.googleusercontent.com/aida-public/AB6AXuCCk7sxP2Qo72vt4wJimUQ332sEs7BF1Mp2SrQ0ra7N1eLGn6Y7m7JfUs2J4UHcgJEVWL0zisSYZWlJs8jE4RpiCoC-u4W-klFsAgLu5MJj8tnsBVp23CEuYnNumq_n2XR2mKeOkCBzjU59uaa99J48UjtvnoziRtUskpvlv3JUkZy_XhO36--K1GI24wjj9_73k-WO75efg7TXyskCTq3KYJGENbXaUh2pqgtwJRFlvtgD6N8L3I3E5qnNL1JNKi2Aw5dGKbfCTZw",
+      status: "cold",
+      dealValue: 0,
+      dealStage: "",
+      dealProgress: 0,
+      callCount: 1,
+      email: "",
+      phone: "+1 (312) 555-0199",
+      linkedin: "",
+      bio: "Oversees media buying operations at OmniMedia. Early-stage conversation, no active deal yet.",
+      tags: [],
+      calls: [
+        { type: "missed", title: "Missed call", label: "voicemail left", time: "1 week ago" }
+      ],
+      isFromAPI: false
+    },
+    {
+    id: 4,
+    hubspotId: 'demo-4',
+    name: "Jordan Davis",
+    firstName: "Jordan",
+    lastName: "Davis:",
+    title: "Founder",
+    company: "Stealth Co",
+    avatarUrl: "",
+    status: "cold",
+    dealValue: 0,
+    dealStage: "",
+    dealProgress: 0,
+    callCount: 0,
+    email: "",
+    phone: "",
+    linkedin: "",
+    bio: "",
+    tags: [],
+    calls: [],
+    isFromAPI: false
+  }
+  ];
+  selectedId = 1;
+}
+
+async function init() {
+    // Load contacts from API
+  await loadContactsFromAPI();
+
   renderList();
   renderDetail();
   updateSyncStatusText();
@@ -1759,7 +2005,49 @@ document.addEventListener("DOMContentLoaded", init);
 
     // ---- Element references -------------------------------------------------
     const overlay = document.getElementById('incomingCallOverlay');
-    const avatarEl = document.getElementById('incomingCallAvatar');
+    const avatarContainer = document.getElementById('incomingCallAvatar');
+    
+    // Helper function to generate avatar text (initials or NA)
+    function getAvatarInitials(name) {
+      if (!name || name.trim() === '') return 'NA';
+      const parts = name.trim().split(/\s+/).filter(p => p.length > 0);
+      return parts.map(p => p[0].toUpperCase()).join('').substring(0, 2) || 'NA';
+    }
+    
+    // Render avatar: image if available, otherwise initials or NA
+    function renderAvatarForCall(name, avatarUrl) {
+      if (!avatarContainer) return;
+      
+      // Clear container
+      avatarContainer.innerHTML = '';
+      
+      // If there's a valid avatar URL, create an image and handle load failures
+      if (avatarUrl && avatarUrl.trim() !== '') {
+        const img = document.createElement('img');
+        img.alt = name || 'Avatar';
+        img.className = 'w-full h-full object-cover rounded-full';
+        
+        // On successful load, display the image
+        img.onload = () => {
+          avatarContainer.innerHTML = '';
+          avatarContainer.appendChild(img);
+        };
+        
+        // On load failure, fall back to initials/NA
+        img.onerror = () => {
+          avatarContainer.innerHTML = '';
+          avatarContainer.textContent = getAvatarInitials(name);
+          avatarContainer.classList.add('text-white', 'font-bold', 'text-sm');
+        };
+        
+        img.src = avatarUrl;
+      } else {
+        // No avatar URL: display initials or NA
+        avatarContainer.innerHTML = '';
+        avatarContainer.textContent = getAvatarInitials(name);
+        avatarContainer.classList.add('text-white', 'font-bold', 'text-sm');
+      }
+    }
     const nameEl = document.getElementById('incomingCallName');
     const companyEl = document.getElementById('incomingCallCompany');
     const numberEl = document.getElementById('incomingCallNumber');
@@ -1879,8 +2167,7 @@ document.addEventListener("DOMContentLoaded", init);
       CALL.caller = caller;
       CALL.status = 'ringing';
 
-      avatarEl.src = caller.avatar;
-      avatarEl.alt = caller.name;
+      renderAvatarForCall(caller.name, caller.avatar);
       nameEl.textContent = caller.name;
       companyEl.textContent = caller.company;
       numberEl.textContent = caller.number;
@@ -2059,7 +2346,7 @@ document.addEventListener("DOMContentLoaded", init);
     voicemailBtn.addEventListener('click', sendToVoicemail);
     holdBtn.addEventListener('click', toggleHold);
     endBtn.addEventListener('click', endCall);
-    newCallBtn?.addEventListener('click', openNewCallModal);
+    newCallBtn?.addEventListener('click', () => DialPad.open());
     cancelCallBtn?.addEventListener('click', closeNewCallModal);
     cancelCallSecondaryBtn?.addEventListener('click', closeNewCallModal);
     startCallBtn?.addEventListener('click', startOutboundCall);
@@ -2222,7 +2509,213 @@ document.addEventListener("DOMContentLoaded", init);
 </script>
 
 
+<!-- BEGIN: DialPad Module -->
+<script data-purpose="dial-pad">
+// DialPad Module
+  const DialPad = {
+    state: {
+      isOpen: false,
+      phoneNumber: '',
+      eventListenersAttached: false
+    },
 
+    get overlay() {
+      return document.getElementById('dialPadOverlay');
+    },
+
+    get display() {
+      return document.getElementById('dialPadDisplay');
+    },
+
+    get callNowBtn() {
+      return document.getElementById('dialPadCallNowBtn');
+    },
+
+    open() {
+      if (!this.state.isOpen) {
+        this.reset();
+        this.overlay.classList.remove('hidden');
+        this.state.isOpen = true;
+        this.display.focus();
+        this.attachEventListeners();
+      }
+    },
+
+    close() {
+      if (this.state.isOpen) {
+        this.overlay.classList.add('hidden');
+        this.state.isOpen = false;
+        this.reset();
+      }
+    },
+
+    reset() {
+      this.state.phoneNumber = '';
+      this.display.value = '';
+      this.callNowBtn.disabled = true;
+    },
+
+    addDigit(digit) {
+      this.state.phoneNumber += digit;
+      this.display.value = this.state.phoneNumber;
+      this.updateCallButton();
+    },
+
+    deleteLastDigit() {
+      if (this.state.phoneNumber.length > 0) {
+        this.state.phoneNumber = this.state.phoneNumber.slice(0, -1);
+        this.display.value = this.state.phoneNumber;
+        this.updateCallButton();
+      }
+    },
+
+    clearAll() {
+      this.state.phoneNumber = '';
+      this.display.value = '';
+      this.updateCallButton();
+    },
+
+    updateCallButton() {
+      this.callNowBtn.disabled = this.state.phoneNumber.length === 0;
+    },
+
+    startCall() {
+      if (this.state.phoneNumber.length > 0) {
+        // Store the phone number in localStorage for activeCall.html to retrieve
+        try {
+          localStorage.setItem('dialforgeDialPadNumber', this.state.phoneNumber);
+        } catch (e) {
+          console.error('Error saving phone number to localStorage:', e);
+        }
+        this.close();
+        // Navigate to active call page
+        window.location.href = './activeCall.html';
+      }
+    },
+
+    attachEventListeners() {
+      if (this.state.eventListenersAttached) return;
+
+      // Digit pad buttons
+      document.querySelectorAll('.dial-pad-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const digit = btn.dataset.digit;
+          this.addDigit(digit);
+        });
+      });
+
+      // Delete button
+      const deleteBtn = document.getElementById('dialPadDeleteBtn');
+      if (deleteBtn && !deleteBtn.dataset.listenerAttached) {
+        deleteBtn.addEventListener('click', () => this.deleteLastDigit());
+        deleteBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Clear button
+      const clearBtn = document.getElementById('dialPadClearBtn');
+      if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.addEventListener('click', () => this.clearAll());
+        clearBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Call Now button
+      if (this.callNowBtn && !this.callNowBtn.dataset.listenerAttached) {
+        this.callNowBtn.addEventListener('click', () => this.startCall());
+        this.callNowBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Close button
+      const closeBtn = document.getElementById('dialPadCloseBtn');
+      if (closeBtn && !closeBtn.dataset.listenerAttached) {
+        closeBtn.addEventListener('click', () => this.close());
+        closeBtn.dataset.listenerAttached = 'true';
+      }
+
+      // Close on overlay click (outside modal)
+      if (!this.overlay.dataset.listenerAttached) {
+        this.overlay.addEventListener('click', (e) => {
+          if (e.target === this.overlay) {
+            this.close();
+          }
+        });
+        this.overlay.dataset.listenerAttached = 'true';
+      }
+
+      // Close on Escape key
+      if (!this.state.escapeListenerAttached) {
+        const escapeHandler = (e) => {
+          if (e.key === 'Escape' && this.state.isOpen) {
+            this.close();
+          }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        this.state.escapeListenerAttached = true;
+      }
+      
+      // Keyboard number input (0-9, +, (, ), -, space)
+      if (!this.state.keyboardInputAttached) {
+        const keyboardHandler = (e) => {
+          if (!this.state.isOpen) return;
+          
+          const key = e.key;
+          
+          // Handle Backspace key - reuse existing deleteLastDigit function
+          if (key === 'Backspace') {
+            e.preventDefault();
+            this.deleteLastDigit();
+            return;
+          }
+          
+          // Handle numeric keys (0-9)
+          if (/^\d$/.test(key)) {
+            e.preventDefault();
+            this.addDigit(key);
+            return;
+          }
+          
+          // Handle phone number formatting characters: +, (, ), -, space
+          if (/^[+\(\)\-\s]$/.test(key)) {
+            e.preventDefault();
+            this.addDigit(key);
+            return;
+          }
+        };
+        document.addEventListener('keydown', keyboardHandler);
+        this.state.keyboardInputAttached = true;
+      }
+
+      this.state.eventListenersAttached = true;
+    },
+
+    attachKeyboardShortcut() {
+      document.addEventListener('keydown', (e) => {
+        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+        const isKKey = e.key.toLowerCase() === 'k';
+        
+        // Don't trigger if user is typing in an input, textarea, or contenteditable element
+        const target = e.target;
+        const isEditableElement = 
+          target.tagName === 'INPUT' && target.id !== 'dialPadDisplay' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true';
+        
+        if (isCtrlOrCmd && isKKey && !isEditableElement) {
+          e.preventDefault();
+          this.open();
+        }
+      });
+    }
+  };
+
+  // Initialize the app when DOM is ready
+  document.addEventListener('DOMContentLoaded', () => {
+    DialPad.attachKeyboardShortcut();
+  });
+
+  // Make DialPad globally accessible
+  window.DialPad = DialPad;
+</script>
+<!-- END: DialPad Module -->
 
 
 <!-- BEGIN: Usage Minutes Synchronization -->

@@ -1350,7 +1350,122 @@
   })();
 </script>
 
+<!-- BEGIN: API Integration Scripts -->
+<!-- Load universal API infrastructure first -->
+<script src="./APIintegration/dialforgeAPI.js"></script>
+<!-- Load centralized CRM API layer -->
+<script src="./APIintegration/crmAPI.js"></script>
+<!-- Load Notifications-specific API layer -->
+<script src="./APIintegration/notificationsAPI.js"></script>
+<!-- END: API Integration Scripts -->
+
 <script>
+  // ========== DYNAMIC NOTIFICATION RENDERING ==========
+/**
+ * Generate a notification card HTML element for API-sourced notifications
+ * Uses existing card styling but renders dynamically
+ */
+function createNotificationElement(notif) {
+  const container = document.createElement('div');
+  container.className = 'notification-item glass-card rounded-custom p-5 border-l-4 relative';
+  container.dataset.type = notif.type;
+  container.dataset.id = notif.id;
+  
+  // Determine border color and icon colors based on notification type
+  let borderClass = 'border-l-gray-600';
+  let iconBgClass = 'bg-white/5';
+  let iconColorClass = 'text-gray-400';
+  let dotClass = '';
+  
+  if (notif.type === 'deals') {
+    borderClass = 'border-l-brand';
+    iconBgClass = 'bg-brand/20';
+    iconColorClass = 'text-brand';
+    dotClass = 'bg-brand dot-glow';
+  } else if (notif.type === 'coaching') {
+    borderClass = 'border-l-accent-purple';
+    iconBgClass = 'bg-accent-purple/20';
+    iconColorClass = 'text-accent-purple';
+    dotClass = 'bg-accent-purple dot-glow';
+  } else if (notif.type === 'system') {
+    borderClass = 'border-l-accent-teal';
+    iconBgClass = 'bg-accent-teal/20';
+    iconColorClass = 'text-accent-teal';
+    dotClass = 'bg-accent-teal dot-glow';
+  } else if (notif.type === 'support') {
+    borderClass = 'border-l-teal-support';
+    iconBgClass = 'bg-teal-support/20';
+    iconColorClass = 'text-teal-support';
+    dotClass = 'bg-teal-support dot-glow';
+  } else if (notif.type === 'integrations') {
+    borderClass = 'border-l-accent-gold';
+    iconBgClass = 'bg-accent-gold/20';
+    iconColorClass = 'text-accent-gold';
+    dotClass = 'bg-accent-gold dot-glow';
+  }
+  
+  container.classList.add(borderClass);
+  
+  // Add is-read class if notification has been read
+  if (notif.read) {
+    container.classList.add('is-read');
+  }
+  
+  // Create icon SVG (generic icon for API notifications)
+  const iconSVG = `
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+    </svg>
+  `;
+  
+  // Build the notification card HTML
+  const dotHTML = !notif.read ? `<div class="w-2.5 h-2.5 rounded-full ${dotClass} mt-2"></div>` : '';
+  
+  container.innerHTML = `
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-lg ${iconBgClass} flex items-center justify-center ${iconColorClass} flex-shrink-0">
+        ${iconSVG}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-4 mb-1 flex-wrap">
+          <h3 class="font-bold text-white truncate text-base sm:text-lg">${escapeHtml(notif.title)}</h3>
+          <span class="text-xs text-gray-500 whitespace-nowrap">${escapeHtml(notif.time)}</span>
+        </div>
+        <p class="text-gray-400 text-sm">${escapeHtml(notif.description)}</p>
+      </div>
+      ${dotHTML}
+    </div>
+  `;
+  
+  return container;
+}
+
+/**
+ * Escape HTML special characters to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Render a new notification in the UI
+ * Adds it to the Recent section at the top
+ */
+function renderNotification(notif) {
+  const recentSection = document.getElementById('recentNotifications');
+  if (!recentSection) return;
+  
+  const element = createNotificationElement(notif);
+  recentSection.insertBefore(element, recentSection.firstChild);
+  
+  // Add click handler to mark as read
+  element.addEventListener('click', () => {
+    markAsRead(notif.id);
+  });
+}
+
 const STATE = {
   currentFilter: 'all',
     itemsPerPage: 5,
@@ -1437,8 +1552,59 @@ document.querySelectorAll('#filterTabs button').forEach(btn => {
 });
 
 // Initialize notification visibility on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // STEP 1: Display existing local notifications
   updateNotificationVisibility();
+  
+  // STEP 2: Load API notifications asynchronously
+  try {
+    const apiNotifications = await notificationsAPI.fetchAllNotifications();
+    
+    // STEP 3: Merge API notifications with existing local notifications
+    if (apiNotifications && apiNotifications.length > 0) {
+      // Add API notifications that don't already exist locally
+      apiNotifications.forEach(apiNotif => {
+        // Check if notification with this ID already exists
+        const exists = STATE.notifications.some(n => n.id === apiNotif.id);
+        if (!exists) {
+          STATE.notifications.unshift(apiNotif);  // Add to front (newest first)
+          renderNotification(apiNotif);  // Render in UI
+        }
+      });
+      
+      // Refresh the display with merged notifications
+      updateNotificationVisibility();
+      console.log('[Notifications] Loaded and merged API notifications');
+    }
+  } catch (error) {
+    console.warn('[Notifications] Error loading API notifications:', error);
+    // Continue with local notifications if API fails
+  }
+
+  // STEP 4: Start polling for real-time updates (every 30 seconds)
+  // Non-blocking: existing notifications always shown, new ones added as they arrive
+  if (typeof notificationsAPI !== 'undefined' && notificationsAPI.startPollingNotifications) {
+    notificationsAPI.startPollingNotifications((newNotifications) => {
+      // Merge any new notifications that arrived via polling
+      let addedCount = 0;
+      if (newNotifications && newNotifications.length > 0) {
+        newNotifications.forEach(apiNotif => {
+          const exists = STATE.notifications.some(n => n.id === apiNotif.id);
+          if (!exists) {
+            STATE.notifications.unshift(apiNotif);
+            renderNotification(apiNotif);  // Render the new notification
+            addedCount++;
+          }
+        });
+      }
+      
+      // Only refresh display if new notifications were added
+      if (addedCount > 0) {
+        updateNotificationVisibility();
+        console.log(`[Notifications] Added ${addedCount} new notifications from polling`);
+      }
+    }, 30000);  // Poll every 30 seconds
+  }
 });
 
 // Mark all as read button
@@ -1471,6 +1637,13 @@ function loadSavedProfilePicture() {
 
 // Load saved profile picture when page loads
 loadSavedProfilePicture();
+
+// Stop polling when user leaves the page
+window.addEventListener('beforeunload', () => {
+  if (typeof notificationsAPI !== 'undefined' && notificationsAPI.stopPollingNotifications) {
+    notificationsAPI.stopPollingNotifications();
+  }
+});
 </script>
 
 <!-- BEGIN: DialPad Module -->

@@ -450,8 +450,8 @@
 <header class="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-6 h-16">
 <div class="flex items-center gap-4 md:gap-8 min-w-fit">
 <span class="font-hero-h1 text-2xl font-extrabold text-white">Dial<span class="text-fire-gradient">Forge</span></span>
-<div class="h-8 w-px bg-white/10 hidden lg:block"></div>
-  <div class="flex flex-col justify-center hidden md:flex">
+<div class="h-8 w-px bg-white/10 lg:block"></div>
+  <div class="flex flex-col justify-center md:flex">
     <h2 class="text-xs font-bold text-on-surface-variant/60 uppercase tracking-widest leading-none mb-1">Page</h2>
     <span class="text-sm font-bold text-white whitespace-nowrap">Dashboard</span>
   </div>
@@ -460,7 +460,7 @@
 
 <div class="flex items-center gap-2 md:gap-4 flex-shrink-0">
   <!-- Usage Pill -->
-  <div class="hidden md:flex items-center gap-3 bg-surface-container-high/40 border border-white/5 rounded-full px-3 py-1.5 relative overflow-hidden">
+  <div class="md:flex items-center gap-3 bg-surface-container-high/40 border border-white/5 rounded-full px-3 py-1.5 relative overflow-hidden">
     <div id="usageProgressBar" class="absolute inset-0 bg-fire-gradient/10 w-[47.8%]"></div>
     <span class="material-symbols-outlined text-fire-accent text-sm relative z-10">hourglass_empty</span>
     <span id="usagePillText" class="text-[10px] font-bold text-white relative z-10">239 / 500 mins</span>
@@ -564,7 +564,7 @@
   <a href="./notifications.html" class="block w-full">
     <button class="group flex flex-col items-center gap-1 w-full py-3 text-on-surface-variant/60 hover:text-fire-accent hover:bg-white/5 transition-all" aria-label="Notifications">
       <span class="material-symbols-outlined">notifications</span>
-      <span class="text-[8px] uppercase font-bold">Notif</span>
+      <span class="text-[8px] uppercase font-bold">Notifs</span>
     </button>
   </a>
  
@@ -961,6 +961,14 @@
 </aside>
 <!--End CRM-->
 
+<!-- BEGIN: API Integration Scripts -->
+<!-- Load universal API infrastructure first -->
+<script src="./APIintegration/dialforgeAPI.js"></script>
+<!-- Load Dashboard-specific API layer -->
+<script src="./APIintegration/dashboardAPI.js"></script>
+<script src="./APIintegration/crmAPI.js"></script>
+<!-- END: API Integration Scripts -->
+
 <script data-purpose="dashboard-ui-updates">
 /**
  * Dashboard UI Update Functions
@@ -1052,10 +1060,11 @@ async function loadDashboardDataAndUpdateUI() {
 <!-- BEGIN: Dashboard Company State Sync -->
 <script data-purpose="dashboard-company-state-sync">
   /**
-   * Load cached company information until currentUserAPI hydrates from /api/me.
+    * Load cached company information until currentUserAPI hydrates from /api/me.
    */
   function loadAndDisplayCompanyData() {
     try {
+      // Load the shared state from localStorage
       const saved = localStorage.getItem('dialforgeState');
       let companyName = '';
 
@@ -2492,21 +2501,7 @@ const PipelineVelocitySync = {
   window.DialPad = DialPad;
 </script>
 
-<!-- BEGIN: API Integration Scripts -->
-<!-- Load universal API infrastructure first -->
-<script src="./APIintegration/dialforgeAPI.js"></script>
-<script src="./APIintegration/currentUserAPI.js"></script>
-<!-- Load Dashboard-specific API layer -->
-<script src="./APIintegration/dashboardAPI.js"></script>
-<!-- END: API Integration Scripts -->
 
-<script data-purpose="current-user-hydration">
-  document.addEventListener('DOMContentLoaded', () => {
-    currentUserAPI.hydrateCurrentUserOnPage().catch((error) => {
-      console.warn('Could not hydrate current user on dashboard:', error);
-    });
-  });
-</script>
 
 <!-- BEGIN: Usage Minutes Synchronization -->
 <script data-purpose="sync-usage-minutes">

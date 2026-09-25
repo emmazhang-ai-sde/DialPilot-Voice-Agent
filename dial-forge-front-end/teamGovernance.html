@@ -2272,6 +2272,93 @@ Performance
       '</div>'
     ).join('');
   }
+  
+  /* =========================================================
+     TEAM GOVERNANCE API INTEGRATION
+     ========================================================= */
+
+  /**
+   * Load governance audit trail from backend webhook log
+   */
+  async function loadGovernanceAuditTrail() {
+    if (typeof teamGovernanceAPI === 'undefined') {
+      console.warn('[Team Governance] teamGovernanceAPI not available');
+      return;
+    }
+
+    try {
+      console.log('[Team Governance] Loading audit trail from backend...');
+      
+      // Fetch audit trail from backend
+      const auditEvents = await teamGovernanceAPI.getGovernanceAuditTrail();
+
+      if (!Array.isArray(auditEvents) || auditEvents.length === 0) {
+        console.log('[Team Governance] No audit events from backend');
+        return;
+      }
+
+      // Convert audit events to activity feed format
+      const backendActivity = auditEvents
+        .slice(0, 5)  // Limit to 5 most recent
+        .map(event => {
+          // Map event type to icon and color
+          let icon = 'event_note';
+          let color = 'on-surface-variant';
+
+          if (event.eventType === 'role_change') {
+            icon = 'shield_person';
+            color = 'fire-accent';
+          } else if (event.eventType === 'permission_change') {
+            icon = 'security';
+            color = 'primary';
+          } else if (event.eventType === 'member_action') {
+            icon = 'person';
+            color = 'tertiary';
+          } else if (event.eventType === 'seat_action') {
+            icon = 'chair_alt';
+            color = 'secondary';
+          } else if (event.eventType === 'invite_action') {
+            icon = 'mail';
+            color = 'fire-accent';
+          } else if (event.eventType === 'access_change') {
+            icon = 'vpn_key';
+            color = 'primary';
+          }
+
+          // Build activity text from event
+          const text = `${event.actor || 'System'}: ${event.action || 'Event'}${event.target ? ' - ' + event.target : ''}`;
+
+          return {
+            icon: icon,
+            color: color,
+            text: text,
+            time: event.timeLabel || 'Unknown time'
+          };
+        });
+
+      // Merge backend audit with existing frontend activity
+      // Keep frontend activities but prepend backend audit events
+      STATE.activity = [...backendActivity, ...STATE.activity].slice(0, 12);
+
+      // Render updated activity feed
+      renderActivityFeed();
+
+      console.log('[Team Governance] Audit trail loaded:', auditEvents.length, 'events');
+    } catch (error) {
+      console.error('[Team Governance] Error loading audit trail:', error);
+      // Page continues to work with existing activity
+    }
+  }
+
+  /**
+   * Set up periodic audit trail refresh
+   */
+  function startAuditTrailRefresh() {
+    // Refresh every 30 seconds
+    setInterval(async () => {
+      await loadGovernanceAuditTrail();
+    }, 30000);
+  }
 
   /* =========================================================
      INITIAL RENDER
@@ -2284,9 +2371,19 @@ Performance
   renderCoachingFocus();
   renderActivityFeed();
 
+    // Load governance audit trail from backend
+  loadGovernanceAuditTrail();
+  
+  // Optionally set up periodic refresh (commented out by default)
+  // startAuditTrailRefresh();
+
 })();
 </script>
 
+  <!-- API Integration Scripts -->
+  <script src="./APIintegration/dialforgeAPI.js"></script>
+  <script src="./APIintegration/teamGovernanceAPI.js"></script>
+  <script src="./APIintegration/crmAPI.js"></script>
 
 <!-- BEGIN: DialPad Module -->
 <script data-purpose="dial-pad">

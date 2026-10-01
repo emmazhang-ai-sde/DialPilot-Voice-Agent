@@ -740,7 +740,7 @@ This company-level binding should eventually hydrate from the same backend sourc
 <h3 class="font-section-header text-xl text-white">Company Knowledge</h3>
 <p class="text-on-surface-variant/70 text-sm mt-1">Shared grounding for the company's sales calls: upload, ingest, attach, and retrieve.</p>
 </div>
-<span id="attachedDocCount" class="rounded-full border border-tertiary/20 bg-tertiary/10 px-3 py-1 text-[10px] font-bold text-tertiary uppercase">2 company docs active</span>
+<span id="attachedDocCount" class="rounded-full border border-tertiary/20 bg-tertiary/10 px-3 py-1 text-[10px] font-bold text-tertiary uppercase">2 grounding this agent</span>
 </div>
 <div id="kbDropZone" class="rounded-2xl border border-dashed border-white/15 bg-surface-container-high/30 p-10 text-center transition-all">
 <div class="mx-auto mb-4 w-14 h-14 rounded-2xl bg-gradient-to-r from-fire-gradient to-fire-accent text-on-primary grid place-items-center shadow-lg fire-glow">
@@ -751,11 +751,11 @@ This company-level binding should eventually hydrate from the same backend sourc
 <button type="button" id="browseKbBtn" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-white/10 bg-white/5 text-sm font-bold text-white hover:bg-white/10 transition-all">
 <span class="material-symbols-outlined text-[18px]">attach_file</span> Browse files
 </button>
-<input id="kbFileInput" type="file" accept=".pdf" multiple hidden />
+<input id="kbFileInput" type="file" accept=".pdf,.md,.markdown,.txt" multiple hidden />
 </div>
 <div class="flex items-center justify-between gap-4">
 <span class="font-mono-data text-xs uppercase tracking-widest text-on-surface-variant/70">Library · <span id="kbFileCount">3</span> files</span>
-<span class="font-mono-data text-xs text-tertiary">Ready for Supabase API wiring</span>
+<span id="kbApiStatus" class="font-mono-data text-xs text-tertiary">Loading company knowledge</span>
 </div>
 <div id="kbFileList" class="space-y-3">
 <div class="kb-file-row rounded-2xl border border-white/10 bg-surface-container-high/30 p-4 flex items-center gap-4" data-attached="true">
@@ -764,7 +764,6 @@ This company-level binding should eventually hydrate from the same backend sourc
 <p class="text-sm font-bold text-white truncate">globifye-product-overview.pdf</p>
 <p class="text-xs text-on-surface-variant/70 font-mono-data mt-1">1.8 MB · Ready · 24 chunks</p>
 </div>
-<button type="button" data-kb-attach class="kb-attach-toggle relative w-11 h-6 rounded-full bg-gradient-to-r from-fire-gradient to-fire-accent shrink-0"><span class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white transition-all"></span></button>
 <button type="button" data-kb-delete class="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-error-red/10 hover:text-error-red transition-all"><span class="material-symbols-outlined text-[18px]">delete</span></button>
 </div>
 <div class="kb-file-row rounded-2xl border border-white/10 bg-surface-container-high/30 p-4 flex items-center gap-4" data-attached="true">
@@ -773,7 +772,6 @@ This company-level binding should eventually hydrate from the same backend sourc
 <p class="text-sm font-bold text-white truncate">globifye-pricing-and-faq.pdf</p>
 <p class="text-xs text-on-surface-variant/70 font-mono-data mt-1">940 KB · Ready · 13 chunks</p>
 </div>
-<button type="button" data-kb-attach class="kb-attach-toggle relative w-11 h-6 rounded-full bg-gradient-to-r from-fire-gradient to-fire-accent shrink-0"><span class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white transition-all"></span></button>
 <button type="button" data-kb-delete class="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-error-red/10 hover:text-error-red transition-all"><span class="material-symbols-outlined text-[18px]">delete</span></button>
 </div>
 <div class="kb-file-row rounded-2xl border border-white/10 bg-surface-container-high/30 p-4 flex items-center gap-4" data-attached="false">
@@ -782,7 +780,6 @@ This company-level binding should eventually hydrate from the same backend sourc
 <p class="text-sm font-bold text-white truncate">admissions-objection-playbook.pdf</p>
 <p class="text-xs text-on-surface-variant/70 font-mono-data mt-1">720 KB · Ready · 9 chunks</p>
 </div>
-<button type="button" data-kb-attach class="kb-attach-toggle relative w-11 h-6 rounded-full bg-white/15 shrink-0"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-all"></span></button>
 <button type="button" data-kb-delete class="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-error-red/10 hover:text-error-red transition-all"><span class="material-symbols-outlined text-[18px]">delete</span></button>
 </div>
 </div>
@@ -1673,57 +1670,140 @@ Estimated response silence <span class="font-mono-data text-fire-accent font-bol
         updateStageNumbers();
       }
 
+      const kbState = {
+        loading: false,
+        documents: []
+      };
+
+      function kbCompanyKey() {
+        return document.getElementById('knowledgeProfile')?.value || 'globifye';
+      }
+
+      function kbAuthHeaders() {
+        const token = localStorage.getItem('dialforgeAuthToken');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      }
+
+      function setKbApiStatus(text, tone = 'ready') {
+        const status = document.getElementById('kbApiStatus');
+        if (!status) return;
+        status.textContent = text;
+        status.classList.toggle('text-tertiary', tone !== 'error');
+        status.classList.toggle('text-error-red', tone === 'error');
+      }
+
+      function formatBytes(bytes) {
+        const value = Number(bytes || 0);
+        if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+        if (value >= 1024) return `${Math.round(value / 1024)} KB`;
+        return `${value} B`;
+      }
+
       function updateKbCounts() {
         const rows = Array.from(document.querySelectorAll('#kbFileList .kb-file-row'));
-        const attached = rows.filter((row) => row.dataset.attached === 'true').length;
         const fileCount = document.getElementById('kbFileCount');
         const attachedCount = document.getElementById('attachedDocCount');
         if (fileCount) fileCount.textContent = String(rows.length);
-        if (attachedCount) attachedCount.textContent = `${attached} grounding this agent`;
+        if (attachedCount) attachedCount.textContent = `${rows.length} grounding this agent`;
       }
 
-      function setKbRowAttached(row, attached) {
-        row.dataset.attached = String(attached);
-        const toggle = row.querySelector('[data-kb-attach]');
-        const knob = toggle?.querySelector('span');
-        if (!toggle || !knob) return;
-        toggle.classList.toggle('bg-gradient-to-r', attached);
-        toggle.classList.toggle('from-fire-gradient', attached);
-        toggle.classList.toggle('to-fire-accent', attached);
-        toggle.classList.toggle('bg-white/15', !attached);
-        knob.classList.toggle('right-0.5', attached);
-        knob.classList.toggle('left-0.5', !attached);
+      function knowledgeDocumentMeta(doc) {
+        const status = doc.status === 'error' ? 'Error' : doc.status === 'disabled' ? 'Disabled' : 'Ready';
+        const chunks = Number(doc.chunk_count || 0);
+        const chunkText = chunks === 1 ? '1 chunk' : `${chunks} chunks`;
+        const provider = doc.vector_provider ? ` · ${doc.vector_provider}` : '';
+        const error = doc.error ? ` · ${doc.error}` : '';
+        return `${formatBytes(doc.size_bytes)} · ${status} · ${chunkText}${provider}${error}`;
       }
 
-      function addKbFile(file) {
+      function renderKbDocuments(documents) {
         const list = document.getElementById('kbFileList');
         if (!list) return;
-        const row = document.createElement('div');
-        row.className = 'kb-file-row rounded-2xl border border-white/10 bg-surface-container-high/30 p-4 flex items-center gap-4';
-        row.dataset.attached = 'true';
-        row.innerHTML = `
-          <div class="w-10 h-10 rounded-xl bg-primary-container/10 text-fire-accent grid place-items-center shrink-0"><span class="material-symbols-outlined">description</span></div>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-bold text-white truncate"></p>
-            <p class="text-xs text-on-surface-variant/70 font-mono-data mt-1">Processing · optimistic upload</p>
-          </div>
-          <button type="button" data-kb-attach class="kb-attach-toggle relative w-11 h-6 rounded-full bg-gradient-to-r from-fire-gradient to-fire-accent shrink-0"><span class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white transition-all"></span></button>
-          <button type="button" data-kb-delete class="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-error-red/10 hover:text-error-red transition-all"><span class="material-symbols-outlined text-[18px]">delete</span></button>
-        `;
-        row.querySelector('p').textContent = file.name;
-        list.appendChild(row);
-        wireKbRow(row);
+        list.innerHTML = '';
+        documents.forEach((doc) => {
+          const row = document.createElement('div');
+          row.className = 'kb-file-row rounded-2xl border border-white/10 bg-surface-container-high/30 p-4 flex items-center gap-4';
+          row.dataset.documentId = doc.document_id;
+          row.innerHTML = `
+            <div class="w-10 h-10 rounded-xl bg-primary-container/10 text-fire-accent grid place-items-center shrink-0"><span class="material-symbols-outlined">description</span></div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-bold text-white truncate"></p>
+              <p class="text-xs text-on-surface-variant/70 font-mono-data mt-1 truncate"></p>
+            </div>
+            <button type="button" data-kb-delete class="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-error-red/10 hover:text-error-red transition-all"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+          `;
+          row.querySelector('p').textContent = doc.filename || 'Knowledge document';
+          row.querySelectorAll('p')[1].textContent = knowledgeDocumentMeta(doc);
+          list.appendChild(row);
+          wireKbRow(row);
+        });
         updateKbCounts();
       }
 
-      function wireKbRow(row) {
-        row.querySelector('[data-kb-attach]')?.addEventListener('click', () => {
-          setKbRowAttached(row, row.dataset.attached !== 'true');
-          updateKbCounts();
-        });
-        row.querySelector('[data-kb-delete]')?.addEventListener('click', () => {
+      async function loadKnowledgeLibrary() {
+        setKbApiStatus('Loading company knowledge');
+        try {
+          const response = await fetch(`/api/company-knowledge?company_key=${encodeURIComponent(kbCompanyKey())}`, {
+            headers: kbAuthHeaders()
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to load knowledge');
+          kbState.documents = payload.documents || [];
+          renderKbDocuments(kbState.documents);
+          setKbApiStatus('Connected to KnowledgeService');
+        } catch (error) {
+          renderKbDocuments([]);
+          setKbApiStatus(error.message || 'Knowledge API unavailable', 'error');
+        }
+      }
+
+      async function uploadKbFiles(files) {
+        const selected = Array.from(files || []);
+        if (!selected.length || kbState.loading) return;
+        kbState.loading = true;
+        setKbApiStatus('Uploading and ingesting');
+        const form = new FormData();
+        form.append('company_key', kbCompanyKey());
+        selected.forEach((file) => form.append('files', file));
+        try {
+          const response = await fetch('/api/company-knowledge', {
+            method: 'POST',
+            headers: kbAuthHeaders(),
+            body: form
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Upload failed');
+          kbState.documents = payload.library || payload.documents || [];
+          renderKbDocuments(kbState.documents);
+          setKbApiStatus('Upload ingested into RAG');
+        } catch (error) {
+          setKbApiStatus(error.message || 'Upload failed', 'error');
+        } finally {
+          kbState.loading = false;
+        }
+      }
+
+      async function deleteKbDocument(row) {
+        const documentId = row.dataset.documentId;
+        setKbApiStatus('Deleting knowledge document');
+        try {
+          const response = await fetch(`/api/company-knowledge/${encodeURIComponent(documentId)}?company_key=${encodeURIComponent(kbCompanyKey())}`, {
+            method: 'DELETE',
+            headers: kbAuthHeaders()
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Delete failed');
           row.remove();
           updateKbCounts();
+          setKbApiStatus('Document removed');
+        } catch (error) {
+          setKbApiStatus(error.message || 'Delete failed', 'error');
+        }
+      }
+
+      function wireKbRow(row) {
+        row.querySelector('[data-kb-delete]')?.addEventListener('click', () => {
+          deleteKbDocument(row);
         });
       }
 
@@ -1733,7 +1813,7 @@ Estimated response silence <span class="font-mono-data text-fire-accent font-bol
         const dropZone = document.getElementById('kbDropZone');
         browse?.addEventListener('click', () => input?.click());
         input?.addEventListener('change', () => {
-          Array.from(input.files || []).forEach(addKbFile);
+          uploadKbFiles(input.files);
           input.value = '';
         });
         dropZone?.addEventListener('dragover', (event) => {
@@ -1746,8 +1826,10 @@ Estimated response silence <span class="font-mono-data text-fire-accent font-bol
         dropZone?.addEventListener('drop', (event) => {
           event.preventDefault();
           dropZone.classList.remove('border-fire-accent/60', 'bg-primary-container/10');
-          Array.from(event.dataTransfer?.files || []).forEach(addKbFile);
+          uploadKbFiles(event.dataTransfer?.files);
         });
+        document.getElementById('knowledgeProfile')?.addEventListener('change', loadKnowledgeLibrary);
+        loadKnowledgeLibrary();
       }
 
       function initTemperature() {
@@ -1782,7 +1864,6 @@ Estimated response silence <span class="font-mono-data text-fire-accent font-bol
         });
         document.getElementById('addStageBtn')?.addEventListener('click', addStage);
         stageElements().forEach(wireStage);
-        document.querySelectorAll('#kbFileList .kb-file-row').forEach(wireKbRow);
         initKnowledgeBaseUpload();
         initTemperature();
         updateStageNumbers();

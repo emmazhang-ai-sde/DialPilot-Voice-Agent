@@ -2,8 +2,13 @@
 import http.server
 import json
 import socketserver
+import email.parser
+import email.policy
+import hashlib
 import os
+import re
 import socket
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -21,7 +26,19 @@ SIP_RUNTIME_GLOBAL_SCRIPT = b'<script src="/APIintegration/sipRuntimeGlobal.js" 
 DEMO_USERS_PATH = Path(__file__).with_name('product_demo_users.json')
 DEMO_CONTACTS_PATH = Path(__file__).with_name('product_demo_contacts.json')
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SUPABASE_ENV_PATH = REPO_ROOT / 'dial-forge-ai' / 'ai-pipeline' / '.env.local'
+DIAL_FORGE_AI_ROOT = REPO_ROOT / 'dial-forge-ai'
+KNOWLEDGE_BASE_ROOT = DIAL_FORGE_AI_ROOT / 'knowledge-base'
+KNOWLEDGE_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
+DEFAULT_SUPABASE_ENV_PATH = DIAL_FORGE_AI_ROOT / '.env.local'
+LEGACY_SUPABASE_ENV_PATH = DIAL_FORGE_AI_ROOT / 'ai-pipeline' / '.env.local'
+if str(DIAL_FORGE_AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(DIAL_FORGE_AI_ROOT))
+
+try:
+    from rag.knowledge_service import KnowledgeService, ParseRequest
+except Exception:
+    KnowledgeService = None
+    ParseRequest = None
 
 
 def _read_env_file(path):
@@ -40,7 +57,10 @@ def _read_env_file(path):
     return values
 
 
-_file_env = _read_env_file(os.environ.get('DIALFORGE_SUPABASE_ENV', DEFAULT_SUPABASE_ENV_PATH))
+_file_env = {
+    **_read_env_file(LEGACY_SUPABASE_ENV_PATH),
+    **_read_env_file(os.environ.get('DIALFORGE_SUPABASE_ENV', DEFAULT_SUPABASE_ENV_PATH)),
+}
 SUPABASE_URL = (
     os.environ.get('SUPABASE_SIP_URL')
     or os.environ.get('NEXT_PUBLIC_SUPABASE_URL')
@@ -104,10 +124,20 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
             return
         self.send_error(404, 'Not found')
 
+    def do_DELETE(self):
+        if self.path.startswith('/api/'):
+            self._handle_api_delete()
+            return
+
+        if self.path.startswith(SIP_DEMO_PREFIX):
+            self._proxy_sip_demo()
+            return
+        self.send_error(404, 'Not found')
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.send_header('Content-Length', '0')
         self.end_headers()
@@ -168,6 +198,14 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
             self._proxy_bridge_runtime(path)
             return
 
+        if path == '/api/company-knowledge':
+            user = self._user_from_request(allow_local_fallback=True)
+            if not user:
+                self._send_json({'error': 'not authenticated'}, status=401)
+                return
+            self._send_json(self._company_knowledge_payload(user))
+            return
+
         if path.startswith('/api/call-summaries/'):
             user = self._user_from_request(allow_local_fallback=True)
             if not user:
@@ -214,6 +252,20 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_api_patch(self):
         path = self.path.split('?', 1)[0]
+        if path.startswith('/api/company-knowledge/'):
+            user = self._user_from_request(allow_local_fallback=True)
+            if not user:
+                self._send_json({'error': 'not authenticated'}, status=401)
+                return
+            document_id = urllib.parse.unquote(path[len('/api/company-knowledge/'):].strip('/'))
+            try:
+                self._send_json(self._update_company_knowledge_document(user, document_id, self._read_json_body()))
+            except ValueError as error:
+                self._send_json({'error': str(error)}, status=400)
+            except PermissionError:
+                self._send_json({'error': 'knowledge document not found'}, status=404)
+            return
+
         if path.startswith('/api/call-queue/'):
             user = self._user_from_request()
             if not user:
@@ -236,6 +288,24 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
                     {'error': 'call queue update failed', 'detail': str(error)},
                     status=502,
                 )
+            return
+
+        self._send_json({'error': 'not found'}, status=404)
+
+    def _handle_api_delete(self):
+        path = self.path.split('?', 1)[0]
+        if path.startswith('/api/company-knowledge/'):
+            user = self._user_from_request(allow_local_fallback=True)
+            if not user:
+                self._send_json({'error': 'not authenticated'}, status=401)
+                return
+            document_id = urllib.parse.unquote(path[len('/api/company-knowledge/'):].strip('/'))
+            try:
+                self._send_json(self._delete_company_knowledge_document(user, document_id))
+            except ValueError as error:
+                self._send_json({'error': str(error)}, status=400)
+            except PermissionError:
+                self._send_json({'error': 'knowledge document not found'}, status=404)
             return
 
         self._send_json({'error': 'not found'}, status=404)
@@ -272,6 +342,19 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
 
         if path == '/api/auth/logout':
             self._send_json({'ok': True})
+            return
+
+        if path == '/api/company-knowledge':
+            user = self._user_from_request(allow_local_fallback=True)
+            if not user:
+                self._send_json({'error': 'not authenticated'}, status=401)
+                return
+            try:
+                self._send_json(self._upload_company_knowledge_documents(user))
+            except ValueError as error:
+                self._send_json({'error': str(error)}, status=400)
+            except RuntimeError as error:
+                self._send_json({'error': str(error)}, status=502)
             return
 
         if path in ('/api/handoff/accept', '/api/handoff/resume-ai', '/api/handoff/failure'):
@@ -373,6 +456,243 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Length', str(len(response_body)))
         self.end_headers()
         self.wfile.write(response_body)
+
+    def _company_knowledge_payload(self, user):
+        company_key = self._knowledge_company_key(user)
+        manifest = self._load_knowledge_manifest(company_key)
+        documents = [self._public_knowledge_document(row) for row in manifest.get('documents', [])]
+        return {
+            'company_key': company_key,
+            'documents': documents,
+            'active_count': sum(1 for row in documents if row.get('attached')),
+            'generated_at': time.time(),
+        }
+
+    def _upload_company_knowledge_documents(self, user):
+        company_key = self._knowledge_company_key(user)
+        fields, files = self._read_multipart_form()
+        if fields.get('company_key'):
+            company_key = self._safe_company_key(fields['company_key'])
+        if not files:
+            raise ValueError('at least one knowledge file is required')
+
+        manifest = self._load_knowledge_manifest(company_key)
+        existing = {
+            row.get('document_id'): row
+            for row in manifest.get('documents', [])
+            if row.get('document_id')
+        }
+        upload_dir = self._knowledge_upload_dir(company_key)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        results = []
+
+        for item in files:
+            original_name = item['filename']
+            content = item['content']
+            if len(content) > KNOWLEDGE_UPLOAD_MAX_BYTES:
+                raise ValueError(f'{original_name} exceeds the 20 MB upload limit')
+            suffix = Path(original_name).suffix.lower()
+            if suffix not in {'.pdf', '.md', '.markdown', '.txt'}:
+                raise ValueError(f'{original_name} is not a supported knowledge file')
+
+            digest = hashlib.sha256(content).hexdigest()
+            stem = self._slugify(Path(original_name).stem) or 'knowledge'
+            safe_name = f'{stem}-{digest[:10]}{suffix}'
+            file_path = upload_dir / safe_name
+            file_path.write_bytes(content)
+            document_id = f'{company_key}:upload:{stem}-{digest[:10]}'
+            row = {
+                **existing.get(document_id, {}),
+                'document_id': document_id,
+                'company_key': company_key,
+                'filename': original_name,
+                'stored_filename': safe_name,
+                'source_uri': str(file_path),
+                'source_type': suffix.lstrip('.'),
+                'size_bytes': len(content),
+                'content_hash': digest,
+                'attached': True,
+                'status': 'processing',
+                'uploaded_at': existing.get(document_id, {}).get('uploaded_at') or time.time(),
+                'updated_at': time.time(),
+            }
+            self._ingest_company_knowledge_document(company_key, row)
+            existing[document_id] = row
+            results.append(self._public_knowledge_document(row))
+
+        manifest['documents'] = sorted(existing.values(), key=lambda row: row.get('uploaded_at', 0), reverse=True)
+        self._save_knowledge_manifest(company_key, manifest)
+        return {
+            'ok': True,
+            'company_key': company_key,
+            'documents': results,
+            'library': [self._public_knowledge_document(row) for row in manifest['documents']],
+        }
+
+    def _update_company_knowledge_document(self, user, document_id, body):
+        company_key = self._knowledge_company_key(user)
+        if body.get('company_key'):
+            company_key = self._safe_company_key(body['company_key'])
+        document_id = str(document_id or '').strip()
+        if not document_id:
+            raise ValueError('document_id is required')
+        manifest = self._load_knowledge_manifest(company_key)
+        row = self._find_knowledge_document(manifest, document_id)
+        row['attached'] = bool(body.get('attached'))
+        row['updated_at'] = time.time()
+        row['status'] = 'processing'
+        self._ingest_company_knowledge_document(company_key, row)
+        self._save_knowledge_manifest(company_key, manifest)
+        return {'ok': True, 'document': self._public_knowledge_document(row)}
+
+    def _delete_company_knowledge_document(self, user, document_id):
+        company_key = self._knowledge_company_key(user)
+        document_id = str(document_id or '').strip()
+        if not document_id:
+            raise ValueError('document_id is required')
+        manifest = self._load_knowledge_manifest(company_key)
+        row = self._find_knowledge_document(manifest, document_id)
+        row['attached'] = False
+        row['updated_at'] = time.time()
+        try:
+            self._ingest_company_knowledge_document(company_key, row)
+        except Exception:
+            pass
+
+        try:
+            Path(row.get('source_uri') or '').unlink()
+        except OSError:
+            pass
+        manifest['documents'] = [
+            item for item in manifest.get('documents', [])
+            if item.get('document_id') != document_id
+        ]
+        self._save_knowledge_manifest(company_key, manifest)
+        return {'ok': True, 'document_id': document_id}
+
+    def _read_multipart_form(self):
+        content_type = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in content_type:
+            raise ValueError('multipart/form-data upload is required')
+        length = int(self.headers.get('Content-Length', '0') or 0)
+        if length <= 0:
+            raise ValueError('empty upload body')
+        if length > KNOWLEDGE_UPLOAD_MAX_BYTES * 5:
+            raise ValueError('upload request is too large')
+        raw = self.rfile.read(length)
+        message = email.parser.BytesParser(policy=email.policy.default).parsebytes(
+            f'Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n'.encode() + raw
+        )
+        fields = {}
+        files = []
+        for part in message.iter_parts():
+            if part.get_content_disposition() != 'form-data':
+                continue
+            name = part.get_param('name', header='content-disposition')
+            filename = part.get_filename()
+            payload = part.get_payload(decode=True) or b''
+            if filename:
+                files.append({
+                    'field': name,
+                    'filename': Path(filename).name,
+                    'content': payload,
+                })
+            elif name:
+                fields[name] = payload.decode('utf-8', errors='replace').strip()
+        return fields, files
+
+    def _ingest_company_knowledge_document(self, company_key, row):
+        if KnowledgeService is None or ParseRequest is None:
+            row['status'] = 'error'
+            row['error'] = 'KnowledgeService is not importable in the front-end server process'
+            row['chunk_count'] = 0
+            return row
+        try:
+            service = KnowledgeService.from_env(str(DIAL_FORGE_AI_ROOT))
+            result = service.ingest(
+                ParseRequest(
+                    file_path=row['source_uri'],
+                    company_id=company_key,
+                    document_id=row['document_id'],
+                    title=Path(row['filename']).stem.replace('-', ' ').replace('_', ' ').title(),
+                    source_type=row.get('source_type') or Path(row['filename']).suffix.lstrip('.') or 'file',
+                    source_uri=row['source_uri'],
+                    metadata={
+                        'knowledge_base_id': company_key,
+                        'document_status': 'active' if row.get('attached') else 'disabled',
+                        'uploaded_filename': row.get('filename'),
+                        'content_hash': row.get('content_hash'),
+                    },
+                )
+            )
+            row['status'] = 'ready' if row.get('attached') else 'disabled'
+            row['error'] = ''
+            row['chunk_count'] = result.chunk_count
+            row['vector_provider'] = result.vector_provider
+            row['embedding_provider'] = result.embedding_provider
+            row['parser_provider'] = result.parser_provider
+        except Exception as error:
+            row['status'] = 'error'
+            row['error'] = f'{type(error).__name__}: {error}'
+            row['chunk_count'] = 0
+        return row
+
+    def _knowledge_company_key(self, user):
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        requested = (query.get('company_key') or query.get('company') or [''])[0]
+        if requested:
+            return self._safe_company_key(requested)
+        organization = user.get('organization') or {}
+        slug = organization.get('slug') or organization.get('name') or 'globifye'
+        return self._safe_company_key(slug)
+
+    def _safe_company_key(self, value):
+        company_key = self._slugify(value)
+        if not company_key or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', company_key):
+            raise ValueError('invalid company key')
+        return company_key
+
+    def _knowledge_upload_dir(self, company_key):
+        return KNOWLEDGE_BASE_ROOT / company_key / 'uploads'
+
+    def _knowledge_manifest_path(self, company_key):
+        return self._knowledge_upload_dir(company_key) / 'company_knowledge_manifest.json'
+
+    def _load_knowledge_manifest(self, company_key):
+        path = self._knowledge_manifest_path(company_key)
+        try:
+            payload = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        documents = payload.get('documents') if isinstance(payload, dict) else []
+        return {'documents': documents if isinstance(documents, list) else []}
+
+    def _save_knowledge_manifest(self, company_key, manifest):
+        path = self._knowledge_manifest_path(company_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding='utf-8')
+
+    def _find_knowledge_document(self, manifest, document_id):
+        for row in manifest.get('documents', []):
+            if row.get('document_id') == document_id:
+                return row
+        raise PermissionError('knowledge document not found')
+
+    def _public_knowledge_document(self, row):
+        return {
+            'document_id': row.get('document_id'),
+            'filename': row.get('filename'),
+            'size_bytes': row.get('size_bytes') or 0,
+            'attached': bool(row.get('attached')),
+            'status': row.get('status') or 'unknown',
+            'chunk_count': row.get('chunk_count') or 0,
+            'error': row.get('error') or '',
+            'uploaded_at': row.get('uploaded_at'),
+            'updated_at': row.get('updated_at'),
+            'parser_provider': row.get('parser_provider') or '',
+            'embedding_provider': row.get('embedding_provider') or '',
+            'vector_provider': row.get('vector_provider') or '',
+        }
 
     def _serve_static_html_with_runtime_watcher(self):
         request_path = urllib.parse.urlparse(self.path).path
@@ -1486,7 +1806,7 @@ class DialForgeHandler(http.server.SimpleHTTPRequestHandler):
             return json.loads(raw) if raw else {}
 
     def _slugify(self, value):
-        return '-'.join(str(value or '').lower().split())
+        return re.sub(r'-+', '-', re.sub(r'[^a-z0-9_-]+', '-', str(value or '').lower())).strip('-')
 
     def _proxy_sip_demo(self):
         upstream_path = self.path[len(SIP_DEMO_PREFIX):] or '/'

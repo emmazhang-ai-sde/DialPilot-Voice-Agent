@@ -76,8 +76,8 @@ class QdrantVectorStore:
         self.url = url.rstrip("/")
         if not self.url:
             raise ValueError("Qdrant URL must be configured")
-        self.api_key = api_key
-        if not self.api_key:
+        self.api_key = api_key.strip()
+        if not self.api_key and not _is_local_qdrant_url(self.url):
             raise ValueError("Qdrant API key must be configured")
         self.collection = collection.strip()
         if not self.collection:
@@ -199,10 +199,10 @@ class QdrantVectorStore:
             )
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "api-key": self.api_key,
-            "content-type": "application/json",
-        }
+        headers = {"content-type": "application/json"}
+        if self.api_key:
+            headers["api-key"] = self.api_key
+        return headers
 
 
 class VectorStoreRegistry:
@@ -319,6 +319,15 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     return dot / (na * nb) if na and nb else 0.0
+
+
+def _is_local_qdrant_url(url: str) -> bool:
+    normalized = str(url or "").lower().strip()
+    return (
+        "localhost" in normalized
+        or "127.0.0.1" in normalized
+        or normalized.startswith("http://0.0.0.0")
+    )
 
 
 __all__ = [

@@ -172,7 +172,12 @@ class KnowledgeProviderConfig:
         if normalized == "gemini":
             return _missing({"GEMINI_API_KEY": self.gemini_api_key})
         if normalized == "qdrant":
-            return _missing({"QDRANT_URL": self.qdrant_url, "QDRANT_API_KEY": self.qdrant_api_key})
+            missing = _missing({"QDRANT_URL": self.qdrant_url})
+            if missing:
+                return missing
+            if _is_local_url(self.qdrant_url):
+                return ()
+            return _missing({"QDRANT_API_KEY": self.qdrant_api_key})
         if normalized == "weaviate":
             return _missing({"WEAVIATE_URL": self.weaviate_url, "WEAVIATE_API_KEY": self.weaviate_api_key})
         if normalized == "supabase_pgvector":
@@ -245,6 +250,15 @@ def _dedupe(providers: tuple[str, ...]) -> tuple[str, ...]:
 
 def _missing(values: dict[str, str]) -> tuple[str, ...]:
     return tuple(name for name, value in values.items() if not value)
+
+
+def _is_local_url(url: str) -> bool:
+    normalized = str(url or "").lower().strip()
+    return (
+        "localhost" in normalized
+        or "127.0.0.1" in normalized
+        or normalized.startswith("http://0.0.0.0")
+    )
 
 
 __all__ = [

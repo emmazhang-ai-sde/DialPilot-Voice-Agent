@@ -73,7 +73,15 @@ class AzureDocumentIntelligenceBackend:
 
     provider_name = "azure_document_intelligence"
 
-    def __init__(self, fallback: LocalTextDocumentBackend | None = None):
+    def __init__(
+        self,
+        *,
+        endpoint: str = "",
+        api_key: str = "",
+        fallback: LocalTextDocumentBackend | None = None,
+    ):
+        self.endpoint = endpoint.strip()
+        self.api_key = api_key.strip()
         self._fallback = fallback or LocalTextDocumentBackend()
 
     def parse(self, request: ParseRequest) -> NormalizedDocument:
@@ -81,8 +89,45 @@ class AzureDocumentIntelligenceBackend:
         if path.suffix.lower() in self._fallback.supported_suffixes:
             document = self._fallback.parse(request)
             return _with_parser_provider(document, self.provider_name)
-        raise NotImplementedError(
-            "Azure Document Intelligence parsing is reserved for the managed parser integration"
+        if not self.endpoint or not self.api_key:
+            raise RuntimeError("Azure Document Intelligence endpoint/key must be configured")
+        try:
+            from azure.ai.documentintelligence import DocumentIntelligenceClient
+            from azure.core.credentials import AzureKeyCredential
+        except ImportError as exc:
+            raise RuntimeError("Azure Document Intelligence SDK is not installed") from exc
+
+        client = DocumentIntelligenceClient(
+            endpoint=self.endpoint,
+            credential=AzureKeyCredential(self.api_key),
+        )
+        with path.open("rb") as document_file:
+            try:
+                poller = client.begin_analyze_document(
+                    "prebuilt-layout",
+                    document_file,
+                    output_content_format="markdown",
+                )
+            except TypeError:
+                document_file.seek(0)
+                poller = client.begin_analyze_document("prebuilt-layout", document_file)
+        result = poller.result()
+        content = str(getattr(result, "content", "") or "").strip()
+        if not content:
+            raise ValueError("Azure Document Intelligence returned empty document text")
+        sections = _parse_markdown_sections(
+            content,
+            document_id=request.document_id,
+            default_heading=request.title,
+        )
+        return NormalizedDocument(
+            document_id=request.document_id,
+            company_id=request.company_id,
+            title=request.title,
+            source_type=request.source_type,
+            source_uri=request.source_uri or str(path),
+            sections=tuple(sections),
+            metadata={**request.metadata, "parser_provider": self.provider_name},
         )
 
 
@@ -162,10 +207,16 @@ def _with_parser_provider(document: NormalizedDocument, provider_name: str) -> N
     )
 
 
-def parser_backends() -> Iterable[object]:
+def parser_backends(config: object | None = None) -> Iterable[object]:
     local = LocalTextDocumentBackend()
+    endpoint = getattr(config, "azure_document_intelligence_endpoint", "") if config else ""
+    api_key = getattr(config, "azure_document_intelligence_key", "") if config else ""
     return (
-        AzureDocumentIntelligenceBackend(fallback=local),
+        AzureDocumentIntelligenceBackend(
+            endpoint=endpoint,
+            api_key=api_key,
+            fallback=local,
+        ),
         DoclingDocumentBackend(fallback=local),
         local,
     )

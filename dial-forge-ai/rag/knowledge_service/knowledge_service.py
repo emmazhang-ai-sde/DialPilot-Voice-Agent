@@ -60,12 +60,14 @@ class KnowledgeService:
         score_floor = kwargs.get("score_floor")
         if score_floor is None:
             score_floor = kwargs.get("distance_floor")
+        filters = dict(kwargs.get("filters") or {})
+        filters.setdefault("document_status", "active")
         result = self.retrieve(
             company_id=str(kwargs["company_key"]),
             query=str(kwargs["query"]),
             options=KnowledgeRetrievalOptions(
                 top_k=top_k,
-                filters=dict(kwargs.get("filters") or {}),
+                filters=filters,
                 score_floor=float(score_floor) if score_floor is not None else None,
             ),
         )

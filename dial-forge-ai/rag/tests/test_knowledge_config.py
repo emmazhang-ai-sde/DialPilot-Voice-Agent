@@ -43,6 +43,14 @@ class KnowledgeProviderConfigTest(unittest.TestCase):
         self.assertFalse(readiness["qdrant"]["configured"])
         self.assertNotIn("secret-cohere", str(readiness))
 
+    def test_local_qdrant_does_not_require_api_key(self) -> None:
+        config = KnowledgeProviderConfig.from_env(
+            {"QDRANT_URL": "http://localhost:6333"}
+        )
+
+        self.assertEqual(config.missing_credentials("qdrant"), ())
+        self.assertTrue(config.is_provider_configured("qdrant"))
+
     def test_env_file_loading_and_runtime_override(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

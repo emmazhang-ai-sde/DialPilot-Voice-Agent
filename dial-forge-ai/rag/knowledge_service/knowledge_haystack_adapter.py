@@ -59,7 +59,8 @@ class HaystackChunkAdapter:
                 "page_end": section.page_end,
                 "source": source.to_dict(),
             }
-            docs.append(Document(content=section.text, meta=metadata))
+            metadata.setdefault("document_status", "active")
+            docs.append(Document(content=section.text, meta=metadata, id=section.section_id))
         return docs
 
     def split_documents(self, documents: list[Document]) -> list[Document]:

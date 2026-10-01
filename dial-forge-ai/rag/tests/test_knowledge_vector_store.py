@@ -264,6 +264,25 @@ class KnowledgeVectorStoreTest(unittest.TestCase):
         self.assertIsInstance(fallback, InMemoryVectorStore)
         self.assertIsInstance(configured, QdrantVectorStore)
 
+    def test_local_qdrant_store_allows_missing_api_key(self) -> None:
+        store = QdrantVectorStore(
+            url="http://localhost:6333",
+            api_key="",
+            collection="chunks",
+            session=FakeSession(),
+        )
+
+        self.assertEqual(store._headers(), {"content-type": "application/json"})
+
+    def test_remote_qdrant_store_requires_api_key(self) -> None:
+        with self.assertRaisesRegex(ValueError, "API key"):
+            QdrantVectorStore(
+                url="https://qdrant.example.com",
+                api_key="",
+                collection="chunks",
+                session=FakeSession(),
+            )
+
 
 def _chunk() -> Chunk:
     return Chunk(

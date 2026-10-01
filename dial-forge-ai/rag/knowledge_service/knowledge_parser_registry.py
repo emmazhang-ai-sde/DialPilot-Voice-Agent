@@ -19,7 +19,7 @@ class ParserRegistry:
     @classmethod
     def from_config(cls, config: KnowledgeProviderConfig) -> "ParserRegistry":
         return cls(
-            list(parser_backends()),
+            list(parser_backends(config)),
             provider_order=(*config.provider_order("document"), "local_text"),
         )
 

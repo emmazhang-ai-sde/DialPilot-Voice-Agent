@@ -52,6 +52,11 @@ from runtime.capability_policy import (
     RuntimeCapabilityCallBudget,
     serialize_tool_result,
 )
+from livekit_runtime.tools import DialForgeToolHandlers
+from livekit_runtime.turn_runner import (
+    OpenAICompatibleTurnRunnerConfig,
+    RuntimeCapabilityTurnRunner,
+)
 from voice_frame_bridge import BargeInDetectionConfig, LiveAudioFrameBridge
 from voice_output_sink import (
     AriFilePlaybackConfig,
@@ -445,109 +450,25 @@ def groq_worker():
         })
         current_session.conversation_history = conversation_history
         runtime_context = _record_runtime_context(source="llm_turn")
-        model_kwargs = _runtime_capability_model_kwargs(runtime_context)
-        tool_budget = _runtime_capability_call_budget(runtime_context)
-        defer_tts_until_tool_decision = bool(model_kwargs)
+        turn_runner = _build_runtime_turn_runner(runtime_context)
+        _record_runtime_turn_runner_exposure(turn_runner, runtime_context)
 
-        for tool_round in range(MAX_RUNTIME_TOOL_ROUNDS + 1):
-            response = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=conversation_history,
-                stream=True,
-                **model_kwargs,
+        result = turn_runner.run(
+            conversation_history,
+            on_first_token=lambda: log("LLM first-token", ms=_ms(), blank_before=True),
+            on_sentence=lambda sentence: enqueue_assistant_text(sentence, turn_epoch),
+            should_continue=lambda: turn_epoch == epoch,
+        )
+        _record_runtime_turn_runner_events(result.events)
+        current_session.conversation_history = conversation_history
+
+        if result.fallback_used:
+            log(
+                "CAPABILITY_TOOLS",
+                "tool round limit reached; skipping additional model call",
             )
 
-            sentence = ""
-            full_response = ""
-            first_token = True
-            tool_calls = {}
-
-            for chunk in response:
-                delta = chunk.choices[0].delta
-
-                if getattr(delta, "tool_calls", None):
-                    for tool_call in delta.tool_calls:
-                        function_call = getattr(tool_call, "function", None)
-                        entry = tool_calls.setdefault(
-                            tool_call.index,
-                            {"id": "", "name": "", "arguments": ""},
-                        )
-                        if tool_call.id:
-                            entry["id"] = tool_call.id
-                        if function_call and function_call.name:
-                            entry["name"] = function_call.name
-                        if function_call and function_call.arguments:
-                            entry["arguments"] += function_call.arguments
-                    continue
-
-                token = delta.content
-
-                if token is None:
-                    continue
-
-                if first_token:
-                    log("LLM first-token", ms=_ms(), blank_before=True)
-                    first_token = False
-
-                sentence += token
-                full_response += token
-
-                if SHOW_LLM_STREAM:
-                    print(token, end="", flush=True)
-
-                if sentence.endswith(
-                    (".", "!", "?")
-                ):
-                    if turn_epoch != epoch:   # holder switched -- abandon this turn
-                        break
-                    if not defer_tts_until_tool_decision:
-                        enqueue_assistant_text(sentence, turn_epoch)
-                    sentence = ""
-
-            if SHOW_LLM_STREAM:
-                print()
-
-            if tool_calls:
-                _dispatch_runtime_tool_calls(
-                    runtime_context=runtime_context,
-                    tool_calls=tool_calls,
-                    tool_budget=tool_budget,
-                    assistant_content=full_response,
-                )
-                current_session.conversation_history = conversation_history
-                if tool_round >= MAX_RUNTIME_TOOL_ROUNDS:
-                    fallback_response = (
-                        "I’m sorry, I’m having trouble completing that action right now. "
-                        "Let me continue with what I can confirm."
-                    )
-                    log(
-                        "CAPABILITY_TOOLS",
-                        "tool round limit reached; skipping additional model call",
-                    )
-                    if turn_epoch == epoch:
-                        enqueue_assistant_text(fallback_response, turn_epoch)
-                    conversation_history.append({
-                        "role": "assistant",
-                        "content": fallback_response,
-                    })
-                    current_session.conversation_history = conversation_history
-                    break
-                continue
-
-            if turn_epoch == epoch:
-                if defer_tts_until_tool_decision and full_response:
-                    enqueue_assistant_text(full_response, turn_epoch)
-                elif sentence:
-                    enqueue_assistant_text(sentence, turn_epoch)
-
-            log("LLM reply", full_response, ms=_ms())
-
-            conversation_history.append({
-                "role": "assistant",
-                "content": full_response
-            })
-            current_session.conversation_history = conversation_history
-            break
+        log("LLM reply", result.assistant_text, ms=_ms())
 
         if len(conversation_history) > MAX_HISTORY + 1:
             conversation_history = (
@@ -1116,6 +1037,76 @@ def _record_runtime_context(*, source):
         **payload,
     )
     return runtime_context
+
+
+def _build_runtime_turn_runner(runtime_context):
+    return RuntimeCapabilityTurnRunner(
+        client=client,
+        runtime_context=runtime_context,
+        handlers=DialForgeToolHandlers(
+            human_handoff_handler=_runtime_human_handoff_handler,
+        ),
+        registry=CAPABILITY_REGISTRY,
+        tools_enabled=ENABLE_RUNTIME_CAPABILITY_TOOLS,
+        config=OpenAICompatibleTurnRunnerConfig(
+            model="openai/gpt-oss-120b",
+            max_tool_rounds=MAX_RUNTIME_TOOL_ROUNDS,
+            max_tool_result_chars=MAX_RUNTIME_TOOL_RESULT_CHARS,
+            show_stream=SHOW_LLM_STREAM,
+        ),
+    )
+
+
+def _record_runtime_turn_runner_exposure(turn_runner, runtime_context):
+    if not ENABLE_RUNTIME_CAPABILITY_TOOLS or runtime_context is None:
+        return
+
+    tool_names = turn_runner.tool_names
+    current_session.append_event(
+        "runtime_capability_tools.exposed",
+        enabled=True,
+        tool_names=tool_names,
+        agent_config_id=runtime_context.agent_config_id,
+        company_key=runtime_context.company_key,
+        call_session_id=runtime_context.call_session_id,
+        owner=runtime_context.owner,
+    )
+    log(
+        "CAPABILITY_TOOLS",
+        f"exposed {len(tool_names)} tool(s)",
+        payload={"tool_names": tool_names},
+    )
+
+
+def _record_runtime_turn_runner_events(events):
+    for event in events:
+        current_session.append_event(event.name, **event.payload)
+        if event.name == "runtime_capability_tool_calls.dispatching":
+            tool_calls = event.payload.get("tool_calls") or []
+            log(
+                "CAPABILITY_TOOLS",
+                f"dispatching {len(tool_calls)} tool call(s)",
+                payload={"tool_calls": tool_calls},
+            )
+        elif event.name == "runtime_capability_tool_call.failed":
+            log(
+                "CAPABILITY_TOOLS",
+                f"tool call failed: {event.payload.get('error')}",
+                payload={
+                    "tool_call_id": event.payload.get("tool_call_id"),
+                    "name": event.payload.get("capability"),
+                },
+            )
+        elif event.name == "runtime_capability_tools.failed":
+            log(
+                "CAPABILITY_TOOLS",
+                f"failed to expose tools: {event.payload.get('error')}",
+            )
+        elif event.name == "runtime_capability_policy.failed":
+            log(
+                "CAPABILITY_TOOLS",
+                f"failed to build call budget: {event.payload.get('error')}",
+            )
 
 
 def _runtime_capability_model_kwargs(runtime_context):

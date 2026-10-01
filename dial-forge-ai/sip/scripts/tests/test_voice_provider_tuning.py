@@ -4,7 +4,14 @@ import tempfile
 import unittest
 from urllib.parse import parse_qs, urlparse
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "archive",
+        "asterisk_legacy",
+    ),
+)
 
 from voice_provider_tuning import load_provider_tuning, read_env_file
 

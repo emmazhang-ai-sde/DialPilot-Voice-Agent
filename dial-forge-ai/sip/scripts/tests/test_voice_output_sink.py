@@ -4,7 +4,14 @@ import tempfile
 import unittest
 import wave
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "archive",
+        "asterisk_legacy",
+    ),
+)
 
 from voice_frame_bridge import OutputAudioRawFrame
 from voice_output_sink import (

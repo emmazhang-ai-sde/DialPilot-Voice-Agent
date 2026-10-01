@@ -1,0 +1,9 @@
+
+# Local environment files
+.env.local
+**/.env.local
+
+# macOS / Python cache
+.DS_Store
+__pycache__/
+*.pyc

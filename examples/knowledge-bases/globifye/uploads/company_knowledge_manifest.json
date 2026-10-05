@@ -1,0 +1,20 @@
+{
+  "documents": [
+    {
+      "attached": true,
+      "chunk_count": 0,
+      "company_key": "globifye",
+      "content_hash": "3476203f32cd9b8e7911f7e86a7f32122ba956043c993c0aef8c9f2b9181057f",
+      "document_id": "globifye:upload:dial-forge-product-strategy-definition-3476203f32",
+      "error": "KnowledgeService is not importable in the front-end server process",
+      "filename": "Dial Forge - Product Strategy & Definition.pdf",
+      "size_bytes": 293898,
+      "source_type": "pdf",
+      "source_uri": "/Users/shuyangzhang/20-voice-agent/dial-forge/dial-forge-ai/knowledge-base/globifye/uploads/dial-forge-product-strategy-definition-3476203f32.pdf",
+      "status": "error",
+      "stored_filename": "dial-forge-product-strategy-definition-3476203f32.pdf",
+      "updated_at": 1791151138.481809,
+      "uploaded_at": 1791151138.481809
+    }
+  ]
+}
